@@ -1,7 +1,7 @@
 #import <UIKit/UIKit.h>
 
 /*
- * Apps Manager Tweak - Diagnostic Version
+ * Apps Manager Tweak - Diagnostic Version (Fixed Build Error)
  * This helps verify if the tweak is loaded and identifies the correct classes.
  */
 
@@ -14,23 +14,26 @@
 @interface BackupInfoTableViewController : UITableViewController
 - (void)updateNextBackupButtonWithTag:(NSString *)tag;
 - (void)handleNextBackupTap;
+- (void)handleNextBackupAction;
 @end
 
 @interface AppInfoTableViewController : UITableViewController
 @property (nonatomic, retain) id item;
 - (void)updateNextBackupButtonWithTag:(NSString *)tag;
 - (void)handleNextBackupTap;
+- (void)handleNextBackupAction;
 @end
 
 @interface BackupsTableViewController : UITableViewController
 @property (nonatomic, retain) id app;
 - (void)updateNextBackupButtonWithTag:(NSString *)tag;
 - (void)handleNextBackupTap;
+- (void)handleNextBackupAction;
 @end
 
 static NSMutableDictionary *appCurrentRunIndex;
 
-// Shared Logic: Get identity for the app
+// Shared Helper: Get identity for the app
 static NSString *getAppId(id self) {
     id appObj = nil;
     if ([self respondsToSelector:@selector(app)]) appObj = [self performSelector:@selector(app)];
@@ -46,7 +49,7 @@ static NSString *getAppId(id self) {
     return nil;
 }
 
-// Shared Logic: Update Button
+// Shared Helper: Update Button
 static void applyButton(UIViewController *self, NSString *tag) {
     NSString *bundleId = getAppId(self);
     if (!bundleId || !self.navigationItem) return;
@@ -62,7 +65,6 @@ static void applyButton(UIViewController *self, NSString *tag) {
 
     NSMutableArray *items = [self.navigationItem.rightBarButtonItems mutableCopy] ?: [NSMutableArray new];
     
-    // Safety loop with type casting
     NSInteger existingIdx = -1;
     for (NSUInteger i = 0; i < items.count; i++) {
         UIBarButtonItem *item = (UIBarButtonItem *)items[i];
@@ -80,7 +82,7 @@ static void applyButton(UIViewController *self, NSString *tag) {
     self.navigationItem.rightBarButtonItems = items;
 }
 
-// Shared Logic: Handle button tap (increment index)
+// Shared Helper: Handle button tap
 static void handleButtonTap(UIViewController *self) {
     NSString *bundleId = getAppId(self);
     if (!bundleId) return;
@@ -89,98 +91,84 @@ static void handleButtonTap(UIViewController *self) {
     NSInteger currentIdx = [[appCurrentRunIndex objectForKey:bundleId] integerValue];
     [appCurrentRunIndex setObject:@(currentIdx + 1) forKey:bundleId];
     
-    // Re-apply button to update its title
+    // Update display tag
+    NSString *tag = @"Unknown";
+    if ([self isKindOfClass:[BackupInfoTableViewController class]]) tag = @"InfoList";
+    else if ([self isKindOfClass:[AppInfoTableViewController class]]) tag = @"AppInfo";
+    else if ([self isKindOfClass:[BackupsTableViewController class]]) tag = @"BackupList";
+
     if ([self respondsToSelector:@selector(updateNextBackupButtonWithTag:)]) {
-        // Determine the tag based on the class type
-        NSString *tag = @"Unknown";
-        if ([self isKindOfClass:[BackupInfoTableViewController class]]) {
-            tag = @"InfoList";
-        } else if ([self isKindOfClass:[AppInfoTableViewController class]]) {
-            tag = @"AppInfo";
-        } else if ([self isKindOfClass:[BackupsTableViewController class]]) {
-            tag = @"BackupList";
-        }
         [self performSelector:@selector(updateNextBackupButtonWithTag:) withObject:tag];
     }
 }
 
-// Shared Logic: Sync index on row tap
-static void syncIndexOnTap(UIViewController *self, NSIndexPath *indexPath) {
+// Shared Helper: Sync index on row tap
+static void syncIndex(UIViewController *self, NSIndexPath *indexPath) {
     NSString *bundleId = getAppId(self);
     if (!bundleId) return;
 
     if (!appCurrentRunIndex) appCurrentRunIndex = [NSMutableDictionary new];
     [appCurrentRunIndex setObject:@(indexPath.row) forKey:bundleId];
 
-    // Re-apply button to update its title
+    NSString *tag = @"Unknown";
+    if ([self isKindOfClass:[BackupInfoTableViewController class]]) tag = @"InfoList";
+    else if ([self isKindOfClass:[AppInfoTableViewController class]]) tag = @"AppInfo";
+    else if ([self isKindOfClass:[BackupsTableViewController class]]) tag = @"BackupList";
+
     if ([self respondsToSelector:@selector(updateNextBackupButtonWithTag:)]) {
-        // Determine the tag based on the class type
-        NSString *tag = @"Unknown";
-        if ([self isKindOfClass:[BackupInfoTableViewController class]]) {
-            tag = @"InfoList";
-        } else if ([self isKindOfClass:[AppInfoTableViewController class]]) {
-            tag = @"AppInfo";
-        } else if ([self isKindOfClass:[BackupsTableViewController class]]) {
-            tag = @"BackupList";
-        }
         [self performSelector:@selector(updateNextBackupButtonWithTag:) withObject:tag];
     }
 }
 
+// --- Hooks ---
 
-// Global Hooks
 %hook BackupInfoTableViewController
 - (void)viewWillAppear:(BOOL)animated { %orig; [self updateNextBackupButtonWithTag:@"InfoList"]; }
 %new - (void)updateNextBackupButtonWithTag:(NSString *)tag { applyButton(self, tag); }
-%new - (void)handleNextBackupTap { [self performSelector:@selector(handleNextBackupAction)]; }
+%new - (void)handleNextBackupTap { [self handleNextBackupAction]; }
 %new - (void)handleNextBackupAction { handleButtonTap(self); }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     %orig;
-    syncIndexOnTap(self, indexPath);
+    syncIndex(self, indexPath);
 }
-%end
-
-%new - (void)handleNextBackupAction { handleButtonTap(self); }
 %end
 
 %hook AppInfoTableViewController
 - (void)viewWillAppear:(BOOL)animated { %orig; [self updateNextBackupButtonWithTag:@"AppInfo"]; }
 %new - (void)updateNextBackupButtonWithTag:(NSString *)tag { applyButton(self, tag); }
-%new - (void)handleNextBackupTap { [self performSelector:@selector(handleNextBackupAction)]; }
+%new - (void)handleNextBackupTap { [self handleNextBackupAction]; }
 %new - (void)handleNextBackupAction { handleButtonTap(self); }
 %end
 
 %hook BackupsTableViewController
 - (void)viewWillAppear:(BOOL)animated { %orig; [self updateNextBackupButtonWithTag:@"BackupList"]; }
 %new - (void)updateNextBackupButtonWithTag:(NSString *)tag { applyButton(self, tag); }
-%new - (void)handleNextBackupTap { [self performSelector:@selector(handleNextBackupAction)]; }
+%new - (void)handleNextBackupTap { [self handleNextBackupAction]; }
 %new - (void)handleNextBackupAction { handleButtonTap(self); }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     %orig;
-    syncIndexOnTap(self, indexPath);
+    syncIndex(self, indexPath);
 }
 %end
 
-// Diagnostic alert on startup
+// Global Diagnostic Alert
 %ctor {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"AMBackupHelper" 
-                                                                       message:@"Tweak loaded successfully! If you see this, the injection worked." 
+                                                                       message:@"Diagnostic Tweak Loaded!" 
                                                                 preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Great!" style:UIAlertActionStyleDefault handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
         
         UIWindow *window = nil;
         if (@available(iOS 13.0, *)) {
             for (UIWindowScene* windowScene in [UIApplication sharedApplication].connectedScenes) {
                 if (windowScene.activationState == UISceneActivationStateForegroundActive) {
-                    window = windowScene.windows.firstObject;
-                    break;
+                    window = windowScene.windows.firstObject; break;
                 }
             }
         } else {
             window = [UIApplication sharedApplication].keyWindow;
         }
-        
         [window.rootViewController presentViewController:alert animated:YES completion:nil];
     });
 }
