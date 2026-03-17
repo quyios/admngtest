@@ -92,7 +92,8 @@ static void updateButton(UIViewController *self) {
     NSMutableArray *items = [self.navigationItem.rightBarButtonItems mutableCopy] ?: [NSMutableArray new];
     NSInteger existing = -1;
     for (NSUInteger i = 0; i < items.count; i++) {
-        if ([items[i].title containsString:@"Next (Run:"]) { existing = (NSInteger)i; break; }
+        UIBarButtonItem *item = (UIBarButtonItem *)items[i];
+        if ([item.title containsString:@"Next (Run:"]) { existing = (NSInteger)i; break; }
     }
     if (existing != -1) [items replaceObjectAtIndex:(NSUInteger)existing withObject:btn];
     else [items addObject:btn];
