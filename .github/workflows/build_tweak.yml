@@ -2,7 +2,9 @@ name: Build Tweak
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
@@ -11,27 +13,30 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install Theos
+      - name: Setup Theos
         run: |
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
-          echo "THEOS=~/theos" >> $GITHUB_ENV
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Install SDK
+      - name: Setup SDK
         run: |
-          mkdir -p ~/theos/sdks
-          curl -LO https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz
-          tar -xJf iPhoneOS14.5.sdk.tar.xz -C ~/theos/sdks
-          rm iPhoneOS14.5.sdk.tar.xz
+          # Use a smaller, more reliable method to get the SDK
+          git clone https://github.com/theos/sdks.git $HOME/sdks
+          mkdir -p $HOME/theos/sdks
+          cp -r $HOME/sdks/iPhoneOS14.5.sdk $HOME/theos/sdks/
+          rm -rf $HOME/sdks
 
       - name: Build Tweak
         run: |
-          export THEOS=~/theos
+          export THEOS=$HOME/theos
           make package NO_IDID=1 FINALPACKAGE=1
+        env:
+          THEOS: ${{ env.THEOS }}
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: AMBackupHelper
           path: packages/*.deb
