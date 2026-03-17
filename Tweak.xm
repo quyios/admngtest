@@ -13,6 +13,9 @@
 @interface AppInfoTableViewController : UITableViewController
 @property (nonatomic, retain) id item; // Usually the app object
 - (id)backupInfo; // Potentially contains the backup list
+- (void)updateNextBackupButton;
+- (NSString *)getBundleIdSafely;
+- (void)handleNextBackupTap;
 @end
 
 // Global track for current index per app
