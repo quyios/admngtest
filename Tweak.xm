@@ -17,62 +17,86 @@
 - (void)reloadBackups;
 @end
 
-// Global or static dictionary to keep track of the current backup index per app
 static NSMutableDictionary *appNextBackupIndex;
 
 %hook BackupsTableViewController
 
-- (void)viewDidLoad {
+- (void)viewWillAppear:(BOOL)animated {
     %orig;
-    
-    // Add "Next Backup" button to navigation bar
-    UIBarButtonItem *nextButton = [[UIBarButtonItem alloc] initWithTitle:@"Next Backup" 
-                                                                   style:UIBarButtonItemStylePlain 
-                                                                  target:self 
-                                                                  action:@selector(handleNextBackupTap)];
-    self.navigationItem.rightBarButtonItems = [self.navigationItem.rightBarButtonItems arrayByAddingObject:nextButton];
+
+    // Safety: Only add the button if we are looking at a specific app's backups
+    if (self.app) {
+        // Prevent duplicate buttons if viewWillAppear is called multiple times
+        BOOL alreadyHasNextButton = NO;
+        for (UIBarButtonItem *item in self.navigationItem.rightBarButtonItems) {
+            if ([item.title isEqualToString:@"Next Backup"]) {
+                alreadyHasNextButton = YES;
+                break;
+            }
+        }
+
+        if (!alreadyHasNextButton) {
+            UIBarButtonItem *nextButton = [[UIBarButtonItem alloc] initWithTitle:@"Next Backup" 
+                                                                           style:UIBarButtonItemStylePlain 
+                                                                          target:self 
+                                                                          action:@selector(handleNextBackupTap)];
+            NSMutableArray *items = [self.navigationItem.rightBarButtonItems mutableCopy];
+            if (!items) items = [NSMutableArray new];
+            [items addObject:nextButton];
+            self.navigationItem.rightBarButtonItems = items;
+        }
+    }
 }
 
 %new
 - (void)handleNextBackupTap {
+    if (!self.app) return;
+    
     if (!appNextBackupIndex) {
         appNextBackupIndex = [NSMutableDictionary new];
     }
     
-    NSString *bundleId = [self.app valueForKey:@"bundleIdentifier"]; // Assuming app has this
+    NSString *bundleId = nil;
+    @try {
+        bundleId = [self.app performSelector:@selector(bundleIdentifier)];
+    } @catch (NSException *e) {
+        // Fallback or ignore
+    }
+    
     if (!bundleId) return;
 
     NSArray *backups = [[%c(BackupList) sharedInstance] backupsForApp:self.app];
+    if (!backups || backups.count == 0) return;
     
-    // Sort backups by date (Ascending)
-    NSArray *sortedBackups = [backups sortedArrayUsingComparator:^NSComparisonResult(ADBackupInfo *map1, ADBackupInfo *map2) {
-        return [map1.fileDate compare:map2.fileDate];
+    // Sort backups by date (Ascending for sequential order)
+    NSArray *sortedBackups = [backups sortedArrayUsingComparator:^NSComparisonResult(id b1, id b2) {
+        NSDate *d1 = [b1 valueForKey:@"fileDate"];
+        NSDate *d2 = [b2 valueForKey:@"fileDate"];
+        return [d1 compare:d2];
     }];
-
-    if (sortedBackups.count == 0) return;
 
     // Get current index
     NSInteger currentIndex = [[appNextBackupIndex objectForKey:bundleId] integerValue];
-    
-    // Safety check if index is out of bounds (e.g. if backups were deleted)
     if (currentIndex >= sortedBackups.count) {
         currentIndex = 0;
     }
 
-    ADBackupInfo *nextBackup = sortedBackups[currentIndex];
-    
+    id nextBackup = sortedBackups[currentIndex];
+    NSString *backupPath = [nextBackup valueForKey:@"path"];
+    NSString *backupName = [nextBackup valueForKey:@"name"];
+
     // Proceed to restore
     [[%c(BackupList) sharedInstance] restoreApp:self.app 
-                                 fromPathBackup:nextBackup.path 
+                                 fromPathBackup:backupPath 
                                        progress:nil 
                                  withCompletion:^{
-        // Increment and save index for next time (with wrap-around)
+        // Increment index for next time (looping)
         NSInteger nextIndex = (currentIndex + 1) % sortedBackups.count;
         [appNextBackupIndex setObject:@(nextIndex) forKey:bundleId];
         
         dispatch_async(dispatch_get_main_queue(), ^{
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Success" 
-                                                                           message:[NSString stringWithFormat:@"Restored: %@", nextBackup.name] 
+                                                                           message:[NSString stringWithFormat:@"Restored: %@", backupName] 
                                                                     preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:alert animated:YES completion:nil];
@@ -82,15 +106,18 @@ static NSMutableDictionary *appNextBackupIndex;
 
 %end
 
-// Hook the sorting in the data source as well to ensure consistent display
 %hook BackupList
 
 - (NSArray *)backupsForApp:(id)app {
     NSArray *backups = %orig;
-    // Return backups sorted by date (Descending for UI usually, but user asked for sorting)
-    // We'll sort Descending for the list view so newest is at top, but the "Next" logic uses Ascending if preferred
-    return [backups sortedArrayUsingComparator:^NSComparisonResult(ADBackupInfo *map1, ADBackupInfo *map2) {
-        return [map2.fileDate compare:map1.fileDate]; // Newest first for UI
+    if (!backups) return nil;
+    
+    // Sort Newest First for the UI list
+    return [backups sortedArrayUsingComparator:^NSComparisonResult(id b1, id b2) {
+        NSDate *d1 = [b1 valueForKey:@"fileDate"];
+        NSDate *d2 = [b2 valueForKey:@"fileDate"];
+        if (!d1 || !d2) return NSOrderedSame;
+        return [d2 compare:d1]; // Descending
     }];
 }
 
