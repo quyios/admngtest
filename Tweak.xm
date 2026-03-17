@@ -1,8 +1,8 @@
 #import <UIKit/UIKit.h>
 
 /*
- * Apps Manager Tweak - Backup Sorting & Sequential Restoration
- * Fixed: Type casting error and dual-controller support
+ * Apps Manager Tweak - Diagnostic Version
+ * This helps verify if the tweak is loaded and identifies the correct classes.
  */
 
 @interface BackupList : NSObject
@@ -12,181 +12,175 @@
 @end
 
 @interface BackupInfoTableViewController : UITableViewController
-- (id)backupInfo;
-- (void)updateNextBackupButton;
+- (void)updateNextBackupButtonWithTag:(NSString *)tag;
 - (void)handleNextBackupTap;
 @end
 
 @interface AppInfoTableViewController : UITableViewController
 @property (nonatomic, retain) id item;
-- (void)updateNextBackupButton;
+- (void)updateNextBackupButtonWithTag:(NSString *)tag;
 - (void)handleNextBackupTap;
 @end
 
 @interface BackupsTableViewController : UITableViewController
 @property (nonatomic, retain) id app;
-- (void)updateNextBackupButton;
+- (void)updateNextBackupButtonWithTag:(NSString *)tag;
 - (void)handleNextBackupTap;
 @end
 
 static NSMutableDictionary *appCurrentRunIndex;
 
-// Shared Helper: Get App Object
-static id getAppObjectFromController(UIViewController *ctrl) {
-    if ([ctrl respondsToSelector:@selector(app)]) return [ctrl performSelector:@selector(app)];
-    if ([ctrl respondsToSelector:@selector(item)]) return [ctrl performSelector:@selector(item)];
-    if ([ctrl respondsToSelector:@selector(backupInfo)]) {
-        id info = [ctrl performSelector:@selector(backupInfo)];
-        if (info && [info respondsToSelector:@selector(app)]) return [info performSelector:@selector(app)];
+// Shared Logic: Get identity for the app
+static NSString *getAppId(id self) {
+    id appObj = nil;
+    if ([self respondsToSelector:@selector(app)]) appObj = [self performSelector:@selector(app)];
+    if (!appObj && [self respondsToSelector:@selector(item)]) appObj = [self performSelector:@selector(item)];
+    if (!appObj && [self respondsToSelector:@selector(backupInfo)]) {
+        id info = [self performSelector:@selector(backupInfo)];
+        if (info && [info respondsToSelector:@selector(app)]) appObj = [info performSelector:@selector(app)];
+    }
+    
+    if (appObj && [appObj respondsToSelector:@selector(bundleIdentifier)]) {
+        return [appObj performSelector:@selector(bundleIdentifier)];
     }
     return nil;
 }
 
-// Shared Helper: Get Bundle ID
-static NSString *getBundleIdFromController(UIViewController *ctrl) {
-    id app = getAppObjectFromController(ctrl);
-    if (app && [app respondsToSelector:@selector(bundleIdentifier)]) {
-        return [app performSelector:@selector(bundleIdentifier)];
-    }
-    return nil;
-}
-
-// Shared Helper: Update Button Title
-static void updateButtonDisplay(UIViewController *self) {
-    NSString *bid = getBundleIdFromController(self);
-    if (!bid) return;
+// Shared Logic: Update Button
+static void applyButton(UIViewController *self, NSString *tag) {
+    NSString *bundleId = getAppId(self);
+    if (!bundleId || !self.navigationItem) return;
 
     if (!appCurrentRunIndex) appCurrentRunIndex = [NSMutableDictionary new];
-    NSInteger idx = [[appCurrentRunIndex objectForKey:bid] integerValue];
+    NSInteger idx = [[appCurrentRunIndex objectForKey:bundleId] integerValue];
     
-    NSString *title = [NSString stringWithFormat:@"Next(Run:%ld)", (long)idx];
-    UIBarButtonItem *nextBtn = [[UIBarButtonItem alloc] initWithTitle:title 
-                                                               style:UIBarButtonItemStyleDone 
-                                                              target:self 
-                                                              action:@selector(handleNextBackupTap)];
+    NSString *title = [NSString stringWithFormat:@"%@ (Run:%ld)", tag, (long)idx];
+    UIBarButtonItem *btn = [[UIBarButtonItem alloc] initWithTitle:title 
+                                                            style:UIBarButtonItemStyleDone 
+                                                           target:self 
+                                                           action:@selector(handleNextBackupTap)];
 
     NSMutableArray *items = [self.navigationItem.rightBarButtonItems mutableCopy] ?: [NSMutableArray new];
     
+    // Safety loop with type casting
     NSInteger existingIdx = -1;
     for (NSUInteger i = 0; i < items.count; i++) {
         UIBarButtonItem *item = (UIBarButtonItem *)items[i];
-        // Safe check for title property
-        if (item && [item respondsToSelector:@selector(title)] && item.title && [item.title containsString:@"Next(Run:"]) {
+        if (item && [item respondsToSelector:@selector(title)] && item.title && [item.title containsString:@"(Run:"]) {
             existingIdx = (NSInteger)i;
             break;
         }
     }
 
     if (existingIdx != -1) {
-        [items replaceObjectAtIndex:(NSUInteger)existingIdx withObject:nextBtn];
+        [items replaceObjectAtIndex:(NSUInteger)existingIdx withObject:btn];
     } else {
-        [items insertObject:nextBtn atIndex:0]; // Insert at start to not hide Edit button
+        [items insertObject:btn atIndex:0];
     }
-    
     self.navigationItem.rightBarButtonItems = items;
 }
 
-// Shared Helper: Handle Tap
+// Shared Logic: Handle button tap (increment index)
 static void handleButtonTap(UIViewController *self) {
-    id app = getAppObjectFromController(self);
-    NSString *bundleId = getBundleIdFromController(self);
-    if (!app || !bundleId) return;
-
-    NSArray *backups = [[%c(BackupList) sharedInstance] backupsForApp:app];
-    if (![backups isKindOfClass:[NSArray class]] || backups.count == 0) return;
-
-    // Ascending sort for sequential run (Oldest -> Newest)
-    NSArray *sorted = [backups sortedArrayUsingComparator:^NSComparisonResult(id b1, id b2) {
-        NSDate *d1 = [b1 valueForKey:@"fileDate"];
-        NSDate *d2 = [b2 valueForKey:@"fileDate"];
-        return [d1 compare:d2];
-    }];
+    NSString *bundleId = getAppId(self);
+    if (!bundleId) return;
 
     if (!appCurrentRunIndex) appCurrentRunIndex = [NSMutableDictionary new];
     NSInteger currentIdx = [[appCurrentRunIndex objectForKey:bundleId] integerValue];
-    if (currentIdx >= sorted.count) currentIdx = 0;
-
-    id targetBackup = sorted[currentIdx];
-    NSString *path = [targetBackup valueForKey:@"path"] ?: [targetBackup valueForKey:@"filePath"];
-    if (!path) return;
-
-    [[%c(BackupList) sharedInstance] restoreApp:app fromPathBackup:path progress:nil withCompletion:^{
-        // Increment and wrap around
-        NSInteger nextIdx = (currentIdx + 1) % sorted.count;
-        [appCurrentRunIndex setObject:@(nextIdx) forKey:bundleId];
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if ([self respondsToSelector:@selector(updateNextBackupButton)]) {
-                [self performSelector:@selector(updateNextBackupButton)];
-            }
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Restored" 
-                                                                           message:[NSString stringWithFormat:@"Finished Run %ld", (long)currentIdx] 
-                                                                    preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-            [self presentViewController:alert animated:YES completion:nil];
-        });
-    }];
-}
-
-// Shared Helper: Sync index on row tap
-static void syncIndexOnTap(id self, NSIndexPath *indexPath) {
-    NSString *bid = getBundleIdFromController(self);
-    id app = getAppObjectFromController(self);
-    if (!bid || !app) return;
-
-    NSArray *backups = [[%c(BackupList) sharedInstance] backupsForApp:app];
-    if ([backups isKindOfClass:[NSArray class]] && backups.count > 0) {
-        NSInteger total = (NSInteger)backups.count;
-        if (indexPath.row < total) {
-            // UI is sorted Newest First (Descending)
-            // Run index is Ascending (0 = Oldest)
-            NSInteger ascendingIdx = total - 1 - indexPath.row;
-            if (!appCurrentRunIndex) appCurrentRunIndex = [NSMutableDictionary new];
-            [appCurrentRunIndex setObject:@(ascendingIdx) forKey:bid];
-            
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if ([self respondsToSelector:@selector(updateNextBackupButton)]) {
-                    [self performSelector:@selector(updateNextBackupButton)];
-                }
-            });
+    [appCurrentRunIndex setObject:@(currentIdx + 1) forKey:bundleId];
+    
+    // Re-apply button to update its title
+    if ([self respondsToSelector:@selector(updateNextBackupButtonWithTag:)]) {
+        // Determine the tag based on the class type
+        NSString *tag = @"Unknown";
+        if ([self isKindOfClass:[BackupInfoTableViewController class]]) {
+            tag = @"InfoList";
+        } else if ([self isKindOfClass:[AppInfoTableViewController class]]) {
+            tag = @"AppInfo";
+        } else if ([self isKindOfClass:[BackupsTableViewController class]]) {
+            tag = @"BackupList";
         }
+        [self performSelector:@selector(updateNextBackupButtonWithTag:) withObject:tag];
     }
 }
 
-// Hook everywhere backups might appear
+// Shared Logic: Sync index on row tap
+static void syncIndexOnTap(UIViewController *self, NSIndexPath *indexPath) {
+    NSString *bundleId = getAppId(self);
+    if (!bundleId) return;
+
+    if (!appCurrentRunIndex) appCurrentRunIndex = [NSMutableDictionary new];
+    [appCurrentRunIndex setObject:@(indexPath.row) forKey:bundleId];
+
+    // Re-apply button to update its title
+    if ([self respondsToSelector:@selector(updateNextBackupButtonWithTag:)]) {
+        // Determine the tag based on the class type
+        NSString *tag = @"Unknown";
+        if ([self isKindOfClass:[BackupInfoTableViewController class]]) {
+            tag = @"InfoList";
+        } else if ([self isKindOfClass:[AppInfoTableViewController class]]) {
+            tag = @"AppInfo";
+        } else if ([self isKindOfClass:[BackupsTableViewController class]]) {
+            tag = @"BackupList";
+        }
+        [self performSelector:@selector(updateNextBackupButtonWithTag:) withObject:tag];
+    }
+}
+
+
+// Global Hooks
 %hook BackupInfoTableViewController
-- (void)viewWillAppear:(BOOL)animated { %orig; [self updateNextBackupButton]; }
-%new - (void)updateNextBackupButton { updateButtonDisplay(self); }
-%new - (void)handleNextBackupTap { handleButtonTap(self); }
+- (void)viewWillAppear:(BOOL)animated { %orig; [self updateNextBackupButtonWithTag:@"InfoList"]; }
+%new - (void)updateNextBackupButtonWithTag:(NSString *)tag { applyButton(self, tag); }
+%new - (void)handleNextBackupTap { [self performSelector:@selector(handleNextBackupAction)]; }
+%new - (void)handleNextBackupAction { handleButtonTap(self); }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     %orig;
     syncIndexOnTap(self, indexPath);
 }
+%end
+
+%new - (void)handleNextBackupAction { handleButtonTap(self); }
 %end
 
 %hook AppInfoTableViewController
-- (void)viewWillAppear:(BOOL)animated { %orig; [self updateNextBackupButton]; }
-%new - (void)updateNextBackupButton { updateButtonDisplay(self); }
-%new - (void)handleNextBackupTap { handleButtonTap(self); }
+- (void)viewWillAppear:(BOOL)animated { %orig; [self updateNextBackupButtonWithTag:@"AppInfo"]; }
+%new - (void)updateNextBackupButtonWithTag:(NSString *)tag { applyButton(self, tag); }
+%new - (void)handleNextBackupTap { [self performSelector:@selector(handleNextBackupAction)]; }
+%new - (void)handleNextBackupAction { handleButtonTap(self); }
 %end
 
 %hook BackupsTableViewController
-- (void)viewWillAppear:(BOOL)animated { %orig; [self updateNextBackupButton]; }
-%new - (void)updateNextBackupButton { updateButtonDisplay(self); }
-%new - (void)handleNextBackupTap { handleButtonTap(self); }
+- (void)viewWillAppear:(BOOL)animated { %orig; [self updateNextBackupButtonWithTag:@"BackupList"]; }
+%new - (void)updateNextBackupButtonWithTag:(NSString *)tag { applyButton(self, tag); }
+%new - (void)handleNextBackupTap { [self performSelector:@selector(handleNextBackupAction)]; }
+%new - (void)handleNextBackupAction { handleButtonTap(self); }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     %orig;
     syncIndexOnTap(self, indexPath);
 }
 %end
 
-// Global Sort Hook
-%hook BackupList
-- (NSArray *)backupsForApp:(id)app {
-    NSArray *backups = %orig;
-    if (![backups isKindOfClass:[NSArray class]] || backups.count < 2) return backups;
-    return [backups sortedArrayUsingComparator:^NSComparisonResult(id b1, id b2) {
-        return [[b2 valueForKey:@"fileDate"] compare:[b1 valueForKey:@"fileDate"]]; // UI shows newest at top
-    }];
+// Diagnostic alert on startup
+%ctor {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"AMBackupHelper" 
+                                                                       message:@"Tweak loaded successfully! If you see this, the injection worked." 
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Great!" style:UIAlertActionStyleDefault handler:nil]];
+        
+        UIWindow *window = nil;
+        if (@available(iOS 13.0, *)) {
+            for (UIWindowScene* windowScene in [UIApplication sharedApplication].connectedScenes) {
+                if (windowScene.activationState == UISceneActivationStateForegroundActive) {
+                    window = windowScene.windows.firstObject;
+                    break;
+                }
+            }
+        } else {
+            window = [UIApplication sharedApplication].keyWindow;
+        }
+        
+        [window.rootViewController presentViewController:alert animated:YES completion:nil];
+    });
 }
-%end
