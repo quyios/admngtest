@@ -70,9 +70,9 @@ static NSMutableDictionary *appNextBackupIndex;
         NSInteger nextIndex = (currentIndex + 1) % sortedBackups.count;
         [appNextBackupIndex setObject:@(nextIndex) forKey:bundleId];
         
-        dispatch_async(dispatch_get_main_content_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Success" 
-                                                                           message:[NSString NSFormat:@"Restored: %@", nextBackup.name] 
+                                                                           message:[NSString stringWithFormat:@"Restored: %@", nextBackup.name] 
                                                                     preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:alert animated:YES completion:nil];
