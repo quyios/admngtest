@@ -93,9 +93,9 @@ static void handleButtonTap(UIViewController *self) {
     
     // Update display tag
     NSString *tag = @"Unknown";
-    if ([self isKindOfClass:[BackupInfoTableViewController class]]) tag = @"InfoList";
-    else if ([self isKindOfClass:[AppInfoTableViewController class]]) tag = @"AppInfo";
-    else if ([self isKindOfClass:[BackupsTableViewController class]]) tag = @"BackupList";
+    if ([self isKindOfClass:%c(BackupInfoTableViewController)]) tag = @"InfoList";
+    else if ([self isKindOfClass:%c(AppInfoTableViewController)]) tag = @"AppInfo";
+    else if ([self isKindOfClass:%c(BackupsTableViewController)]) tag = @"BackupList";
 
     if ([self respondsToSelector:@selector(updateNextBackupButtonWithTag:)]) {
         [self performSelector:@selector(updateNextBackupButtonWithTag:) withObject:tag];
@@ -111,9 +111,9 @@ static void syncIndex(UIViewController *self, NSIndexPath *indexPath) {
     [appCurrentRunIndex setObject:@(indexPath.row) forKey:bundleId];
 
     NSString *tag = @"Unknown";
-    if ([self isKindOfClass:[BackupInfoTableViewController class]]) tag = @"InfoList";
-    else if ([self isKindOfClass:[AppInfoTableViewController class]]) tag = @"AppInfo";
-    else if ([self isKindOfClass:[BackupsTableViewController class]]) tag = @"BackupList";
+    if ([self isKindOfClass:%c(BackupInfoTableViewController)]) tag = @"InfoList";
+    else if ([self isKindOfClass:%c(AppInfoTableViewController)]) tag = @"AppInfo";
+    else if ([self isKindOfClass:%c(BackupsTableViewController)]) tag = @"BackupList";
 
     if ([self respondsToSelector:@selector(updateNextBackupButtonWithTag:)]) {
         [self performSelector:@selector(updateNextBackupButtonWithTag:) withObject:tag];
