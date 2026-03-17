@@ -1,121 +1,67 @@
 #import <UIKit/UIKit.h>
 
-/*
- * Apps Manager Tweak - Backup Sorting & Sequential Restoration
- */
-
 @interface BackupList : NSObject
 + (id)sharedInstance;
 - (NSArray *)backupsForApp:(id)app;
 - (void)restoreApp:(id)app fromPathBackup:(NSString *)path progress:(id)progress withCompletion:(void(^)(void))completion;
 @end
 
-@interface AppInfoTableViewController : UITableViewController
-@property (nonatomic, retain) id item; // Usually the app object
-- (id)backupInfo; // Potentially contains the backup list
+@interface BackupsTableViewController : UITableViewController
+@property (nonatomic, retain) id app; // ivar _app
 - (void)updateNextBackupButton;
-- (NSString *)getBundleIdSafely;
-- (void)handleNextBackupTap;
 @end
 
-// Global track for current index per app
+@interface AppInfoTableViewController : UITableViewController
+@property (nonatomic, retain) id item;
+- (void)updateNextBackupButton;
+@end
+
 static NSMutableDictionary *appCurrentRunIndex;
 
-%hook AppInfoTableViewController
-
-- (void)viewWillAppear:(BOOL)animated {
-    %orig;
-    [self updateNextBackupButton];
-}
-
-%new
-- (void)updateNextBackupButton {
-    if (!self.navigationItem) return;
-
-    NSString *bundleId = [self getBundleIdSafely];
-    NSInteger idx = 0;
-    if (bundleId && appCurrentRunIndex) {
-        idx = [[appCurrentRunIndex objectForKey:bundleId] integerValue];
-    }
-
-    NSString *title = [NSString stringWithFormat:@"Next (Run:%ld)", (long)idx];
-    
-    UIBarButtonItem *nextButton = [[UIBarButtonItem alloc] initWithTitle:title 
-                                                                   style:UIBarButtonItemStyleDone 
-                                                                  target:self 
-                                                                  action:@selector(handleNextBackupTap)];
-    
-    // Replace or add the button
-    NSMutableArray *items = [self.navigationItem.rightBarButtonItems mutableCopy];
-    if (!items) items = [NSMutableArray new];
-    
-    NSInteger existingIdx = -1;
-    for (NSUInteger i = 0; i < items.count; i++) {
-        UIBarButtonItem *item = items[i];
-        if ([item.title containsString:@"Next (Run:"]) {
-            existingIdx = (NSInteger)i;
-            break;
-        }
-    }
-    
-    if (existingIdx != -1) {
-        [items replaceObjectAtIndex:(NSUInteger)existingIdx withObject:nextButton];
-    } else {
-        [items addObject:nextButton];
-    }
-    self.navigationItem.rightBarButtonItems = items;
-}
-
-%new
-- (NSString *)getBundleIdSafely {
+// Shared Logic for both controllers
+static NSString *getBundleId(id controller) {
     id appObj = nil;
-    if ([self respondsToSelector:@selector(item)]) appObj = [self performSelector:@selector(item)];
-    if (!appObj && [self respondsToSelector:@selector(backupInfo)]) {
-        id info = [self performSelector:@selector(backupInfo)];
-        if (info && [info respondsToSelector:@selector(app)]) appObj = [info performSelector:@selector(app)];
-    }
+    if ([controller respondsToSelector:@selector(app)]) appObj = [controller performSelector:@selector(app)];
+    if (!appObj && [controller respondsToSelector:@selector(item)]) appObj = [controller performSelector:@selector(item)];
+    
     if (appObj && [appObj respondsToSelector:@selector(bundleIdentifier)]) {
         return [appObj performSelector:@selector(bundleIdentifier)];
     }
     return nil;
 }
 
-%new
-- (void)handleNextBackupTap {
-    NSString *bundleId = [self getBundleIdSafely];
+static void handleNextTap(UIViewController *self) {
+    NSString *bundleId = getBundleId(self);
     if (!bundleId) return;
 
     id appObj = nil;
-    if ([self respondsToSelector:@selector(item)]) appObj = [self performSelector:@selector(item)];
+    if ([self respondsToSelector:@selector(app)]) appObj = [self performSelector:@selector(app)];
+    if (!appObj && [self respondsToSelector:@selector(item)]) appObj = [self performSelector:@selector(item)];
     if (!appObj) return;
 
     NSArray *backups = [[%c(BackupList) sharedInstance] backupsForApp:appObj];
     if (![backups isKindOfClass:[NSArray class]] || backups.count == 0) return;
 
-    // Use a consistent sorting (Ascending by date for sequential)
+    // Ascending sort for sequential
     NSArray *sortedBackups = [backups sortedArrayUsingComparator:^NSComparisonResult(id b1, id b2) {
-        NSDate *d1 = [b1 valueForKey:@"fileDate"];
-        NSDate *d2 = [b2 valueForKey:@"fileDate"];
-        return [d1 compare:d2];
+        return [[b1 valueForKey:@"fileDate"] compare:[b2 valueForKey:@"fileDate"]];
     }];
 
     if (!appCurrentRunIndex) appCurrentRunIndex = [NSMutableDictionary new];
     NSInteger currentIndex = [[appCurrentRunIndex objectForKey:bundleId] integerValue];
-    
     if (currentIndex >= sortedBackups.count) currentIndex = 0;
 
     id targetBackup = sortedBackups[currentIndex];
     NSString *path = [targetBackup valueForKey:@"path"] ?: [targetBackup valueForKey:@"filePath"];
-    
     if (!path) return;
 
     [[%c(BackupList) sharedInstance] restoreApp:appObj fromPathBackup:path progress:nil withCompletion:^{
-        // Increment for next run
         NSInteger nextIndex = (currentIndex + 1) % sortedBackups.count;
         [appCurrentRunIndex setObject:@(nextIndex) forKey:bundleId];
-        
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self updateNextBackupButton];
+            if ([self respondsToSelector:@selector(updateNextBackupButton)]) {
+                [self performSelector:@selector(updateNextBackupButton)];
+            }
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Restored" 
                                                                            message:[NSString stringWithFormat:@"Finished Run %ld", (long)currentIndex] 
                                                                     preferredStyle:UIAlertControllerStyleAlert];
@@ -125,50 +71,78 @@ static NSMutableDictionary *appCurrentRunIndex;
     }];
 }
 
-// Intercept manual selection to set the "starting" index
+static void updateButton(UIViewController *self) {
+    if (!self.navigationItem) return;
+    
+    // Only show if we have an app selected
+    id appObj = nil;
+    if ([self respondsToSelector:@selector(app)]) appObj = [self performSelector:@selector(app)];
+    if (!appObj && [self respondsToSelector:@selector(item)]) appObj = [self performSelector:@selector(item)];
+    if (!appObj) return;
+
+    NSString *bundleId = getBundleId(self);
+    NSInteger idx = 0;
+    if (bundleId && appCurrentRunIndex) {
+        idx = [[appCurrentRunIndex objectForKey:bundleId] integerValue];
+    }
+
+    NSString *title = [NSString stringWithFormat:@"Next (Run:%ld)", (long)idx];
+    UIBarButtonItem *btn = [[UIBarButtonItem alloc] initWithTitle:title style:UIBarButtonItemStyleDone target:self action:@selector(handleNextBackupTap)];
+    
+    NSMutableArray *items = [self.navigationItem.rightBarButtonItems mutableCopy] ?: [NSMutableArray new];
+    NSInteger existing = -1;
+    for (NSUInteger i = 0; i < items.count; i++) {
+        if ([items[i].title containsString:@"Next (Run:"]) { existing = (NSInteger)i; break; }
+    }
+    if (existing != -1) [items replaceObjectAtIndex:(NSUInteger)existing withObject:btn];
+    else [items addObject:btn];
+    self.navigationItem.rightBarButtonItems = items;
+}
+
+// Hook for Screenshot 2
+%hook BackupsTableViewController
+- (void)viewWillAppear:(BOOL)animated { %orig; [self updateNextBackupButton]; }
+%new - (void)updateNextBackupButton { updateButton(self); }
+%new - (void)handleNextBackupTap { handleNextTap(self); }
+
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     %orig;
-
-    NSString *bundleId = [self getBundleIdSafely];
+    NSString *bundleId = getBundleId(self);
     if (!bundleId) return;
 
-    id appObj = [self respondsToSelector:@selector(item)] ? [self performSelector:@selector(item)] : nil;
+    id appObj = nil;
+    if ([self respondsToSelector:@selector(app)]) appObj = [self performSelector:@selector(app)];
     if (!appObj) return;
 
     NSArray *backups = [[%c(BackupList) sharedInstance] backupsForApp:appObj];
-    if (![backups isKindOfClass:[NSArray class]] || backups.count == 0) return;
-
-    // Mapping logic: The list in UI is sorted Newest First (Descending).
-    // Our "Run" count is Ascending (Oldest First).
-    // If the list has N items:
-    // UI index 0 (Newest) = Ascending index N-1
-    // UI index k = Ascending index (N - 1 - k)
-    
-    // We assume backups are in section 0 or 1. Usually ADManager uses section 0 or 1.
-    // Based on the screenshot, it's likely section 0.
-    NSInteger totalBackups = (NSInteger)backups.count;
-    NSInteger tappedRow = indexPath.row;
-    
-    if (tappedRow < totalBackups) {
-        NSInteger ascendingIdx = totalBackups - 1 - tappedRow;
-        if (!appCurrentRunIndex) appCurrentRunIndex = [NSMutableDictionary new];
-        [appCurrentRunIndex setObject:@(ascendingIdx) forKey:bundleId];
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self updateNextBackupButton];
-        });
+    if ([backups isKindOfClass:[NSArray class]] && backups.count > 0 && indexPath.section == 0) {
+        NSInteger total = (NSInteger)backups.count;
+        if (indexPath.row < total) {
+            // UI is Newest First (Descending)
+            // Run is Ascending
+            NSInteger ascendingIdx = total - 1 - indexPath.row;
+            if (!appCurrentRunIndex) appCurrentRunIndex = [NSMutableDictionary new];
+            [appCurrentRunIndex setObject:@(ascendingIdx) forKey:bundleId];
+            dispatch_async(dispatch_get_main_queue(), ^{ [self updateNextBackupButton]; });
+        }
     }
 }
-
 %end
 
-// Force sort in the data layer for better UX
+// Hook for Screenshot 1
+%hook AppInfoTableViewController
+- (void)viewWillAppear:(BOOL)animated { %orig; [self updateNextBackupButton]; }
+%new - (void)updateNextBackupButton { updateButton(self); }
+%new - (void)handleNextBackupTap { handleNextTap(self); }
+%end
+
+// Sorting
 %hook BackupList
 - (NSArray *)backupsForApp:(id)app {
     NSArray *backups = %orig;
     if (![backups isKindOfClass:[NSArray class]] || backups.count < 2) return backups;
     return [backups sortedArrayUsingComparator:^NSComparisonResult(id b1, id b2) {
-        return [[b2 valueForKey:@"fileDate"] compare:[b1 valueForKey:@"fileDate"]]; // Newest first for UI
+        return [[b2 valueForKey:@"fileDate"] compare:[b1 valueForKey:@"fileDate"]];
     }];
 }
 %end
