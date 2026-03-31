@@ -97,8 +97,7 @@ jobs:
           azule \
             -i dist/original.ipa \
             -f dist/XXTExplorerAuthBypass.dylib \
-            -o dist/XXTExplorer_Bypass.ipa \
-            -n
+            -o dist/XXTExplorer_Bypass.ipa
           # Đổi sang .tipa để cài TrollStore trực tiếp
           cp dist/XXTExplorer_Bypass.ipa dist/XXTExplorer_Bypass.tipa
           echo "Patched TIPA size: $(du -sh dist/XXTExplorer_Bypass.tipa)"
