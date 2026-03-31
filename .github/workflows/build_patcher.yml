@@ -1,0 +1,87 @@
+name: Build XXTEPatcher TIPA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'patcher/**'
+  workflow_dispatch:
+
+jobs:
+  build-patcher:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ─── Setup Theos ───
+      - name: Setup Theos
+        uses: actions/checkout@v4
+        with:
+          repository: theos/theos
+          ref: master
+          path: theos
+          submodules: recursive
+
+      - name: Set THEOS env
+        run: echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
+
+      # ─── iOS SDK ───
+      - name: Download iOS 16.5 SDK
+        run: |
+          curl -fsSL -o sdk.tar.xz \
+            https://github.com/theos/sdks/releases/download/master/iPhoneOS16.5.sdk.tar.xz
+          mkdir -p $THEOS/sdks
+          tar -xf sdk.tar.xz -C $THEOS/sdks
+
+      # ─── Build patcher app ───
+      - name: Build Patcher App
+        working-directory: patcher
+        run: |
+          make -j$(nproc) \
+            THEOS=$THEOS \
+            STRIP=0 \
+            DEBUG=0 \
+            PACKAGE_FORMAT=ipa \
+            2>&1
+
+      # ─── Tìm file .app và đóng gói thành .ipa / .tipa ───
+      - name: Package as TIPA
+        run: |
+          mkdir -p dist
+          
+          # Tìm .app bundle từ theos build output
+          APP_BUNDLE=$(find patcher -name "XXTEPatcher.app" -type d | head -1)
+          echo "Found app bundle: $APP_BUNDLE"
+          
+          if [ -z "$APP_BUNDLE" ]; then
+            # Fallback: tìm trong packages nếu Theos đóng gói rồi
+            DEB=$(find patcher/packages -name "*.deb" 2>/dev/null | head -1)
+            echo "Found deb: $DEB"
+          fi
+          
+          # Nếu có .app bundle, đóng gói thủ công
+          if [ -n "$APP_BUNDLE" ]; then
+            mkdir -p /tmp/Payload
+            cp -r "$APP_BUNDLE" /tmp/Payload/
+            cd /tmp
+            zip -r - Payload/ > $GITHUB_WORKSPACE/dist/XXTEPatcher.ipa
+            # TrollStore dùng .tipa (giống .ipa)
+            cp $GITHUB_WORKSPACE/dist/XXTEPatcher.ipa $GITHUB_WORKSPACE/dist/XXTEPatcher.tipa
+            echo "Packaged: $(du -sh $GITHUB_WORKSPACE/dist/XXTEPatcher.tipa)"
+          else
+            echo "ERROR: Cannot find .app bundle"
+            find patcher -type d | head -20
+            exit 1
+          fi
+
+      # ─── Upload artifact ───
+      - name: Upload TIPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: XXTEPatcher-TIPA
+          path: |
+            dist/XXTEPatcher.tipa
+            dist/XXTEPatcher.ipa
+          retention-days: 30
