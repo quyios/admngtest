@@ -1,4 +1,4 @@
-TARGET = iphone:clang:16.5:14.0
+TARGET = iphone:clang:latest:14.0
 
 APP_NAME = XXTEPatcher
 APP_BUNDLE_ID = com.quyios.xxte-patcher

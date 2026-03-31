@@ -1,0 +1,11 @@
+Package: com.quyios.xxte-auth-bypass
+Name: XXTExplorer Auth Bypass
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Bypass Havoc authentication in XXTExplorer for offline use.
+ Hooks HVCKeychainHelper, HVCHavocAccount, HVCHavocSecret, 
+ XXTEMoreLicenseController, and blocks DRM server calls.
+Maintainer: quyios
+Author: quyios
+Section: Tweaks
+Depends: mobilesubstrate | substitute | libhooker
