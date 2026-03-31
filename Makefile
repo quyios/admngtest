@@ -1,12 +1,17 @@
-ARCHS = arm64
-TARGET := iphone:clang:latest:7.0
-INSTALL_TARGET_PROCESSES = ADManager
+TARGET = iphone:clang:16.5:14.0
+
+APP_NAME = XXTEPatcher
+APP_BUNDLE_ID = com.quyios.xxte-patcher
+APP_DISPLAY_NAME = XXTE Patcher
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = AMBackupHelper
+APPLICATION_NAME = $(APP_NAME)
 
-AMBackupHelper_FILES = Tweak.xm
-AMBackupHelper_CFLAGS = -fobjc-arc
+$(APP_NAME)_FILES = main.m
+$(APP_NAME)_CFLAGS = -fobjc-arc
+$(APP_NAME)_FRAMEWORKS = UIKit Foundation Security
+$(APP_NAME)_CODESIGN_FLAGS = -Sentitlements.plist
+$(APP_NAME)_ENTITLEMENTS = Entitlements.plist
 
-include $(THEOS_MAKE_PATH)/tweak.mk
+include $(THEOS)/makefiles/application.mk
