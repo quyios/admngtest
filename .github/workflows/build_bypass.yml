@@ -94,6 +94,7 @@ jobs:
       - name: Patch IPA
         run: |
           ls -la dist/
+<<<<<<< HEAD
           mkdir -p output
           azule \
             -i dist/original.ipa \
@@ -105,6 +106,14 @@ jobs:
           PATCHED=$(find output -name "*.ipa" | head -1)
           echo "Patched IPA: $PATCHED"
           cp "$PATCHED" dist/XXTExplorer_Bypass.tipa
+=======
+          azule \
+            -i dist/original.ipa \
+            -f dist/XXTExplorerAuthBypass.dylib \
+            -o dist/XXTExplorer_Bypass.ipa
+          # Đổi sang .tipa để cài TrollStore trực tiếp
+          cp dist/XXTExplorer_Bypass.ipa dist/XXTExplorer_Bypass.tipa
+>>>>>>> 560bfd6118c66d32ce333405fc59b4c0519ada73
           echo "Patched TIPA size: $(du -sh dist/XXTExplorer_Bypass.tipa)"
 
       - name: Upload Patched TIPA
