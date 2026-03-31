@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- TrollStore cho phép app có keychain-access-groups bất kỳ -->
+    <!-- Để ghi vào Keychain của XXTExplorer, cần cùng access group -->
+    <key>keychain-access-groups</key>
+    <array>
+        <!-- Access group của patcher app -->
+        <string>$(AppIdentifierPrefix)com.quyios.xxte-patcher</string>
+        <!-- Access group của XXTExplorer — để ghi/đọc Keychain của nó -->
+        <string>GXZ23M5TP2.ch.xxtou.XXTExplorer</string>
+    </array>
+
+    <!-- TrollStore entitlements để có quyền cao hơn -->
+    <key>platform-application</key>
+    <true/>
+    <key>com.apple.private.security.no-sandbox</key>
+    <true/>
+    <key>com.apple.private.system-keychain</key>
+    <true/>
+
+    <!-- Application identifier -->
+    <key>application-identifier</key>
+    <string>$(AppIdentifierPrefix)com.quyios.xxte-patcher</string>
+</dict>
+</plist>
