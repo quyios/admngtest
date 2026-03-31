@@ -1,282 +1,249 @@
 /*
- * XXTExplorer Havoc Auth Bypass Dylib
+ * XXTExplorer Havoc Auth Bypass - TrollStore Edition
  *
- * Hooks tất cả authentication/license checks để trả về trạng thái đã xác thực.
- * Targets:
- *   - HVCKeychainHelper  — đọc token/secret từ Keychain
- *   - HVCHavocAccount    — kiểm tra trạng thái tài khoản
- *   - HVCHavocSecret     — xác minh secret
- *   - XXTEMoreLicenseController — UI license check
- *   - NSURLSession hooks — block DRM server calls (drm.82flex.com)
- *   - NSURLConnection hooks — block older-style network calls
+ * KHÔNG dùng Logos / CydiaSubstrate / Substitute
+ * Dùng ObjC Runtime thuần (method_exchangeImplementations)
+ * → chạy được trên TrollStore không cần jailbreak
+ *
+ * Hook targets:
+ *   HVCKeychainHelper   - trả token/secret giả, accountExists = YES
+ *   HVCHavocAccount     - isValid/isAuthenticated = YES
+ *   HVCHavocSecret      - isValid/isVerified = YES
+ *   XXTEMoreLicenseController - disable purchase alerts
+ *   NSURLSession        - block drm.82flex.com + havoc.app
  */
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 
 // ─────────────────────────────────────────
-// MARK: - HVCKeychainHelper
-// Lớp này quản lý đọc/ghi token + secret vào Keychain iOS
-// Trả về token/secret fake (không rỗng) để app coi như đã login
+// MARK: - Helpers
 // ─────────────────────────────────────────
-%hook HVCKeychainHelper
 
-// Kiểm tra xem account có tồn tại không → YES
-+ (BOOL)accountExists {
-    return YES;
-}
-- (BOOL)accountExists {
-    return YES;
-}
-
-// Trả token giả — đủ để pass các kiểm tra non-null
-+ (NSString *)tokenForKey:(NSString *)key {
-    return @"bypass_token_offline_mode_xxt";
-}
-- (NSString *)tokenForKey:(NSString *)key {
-    return @"bypass_token_offline_mode_xxt";
-}
-
-// Trả secret giả
-+ (NSString *)secretForKey:(NSString *)key {
-    return @"bypass_secret_offline_mode_xxt";
-}
-- (NSString *)secretForKey:(NSString *)key {
-    return @"bypass_secret_offline_mode_xxt";
-}
-
-// Nếu app đọc token bằng getter trực tiếp
-- (NSString *)token {
-    return @"bypass_token_offline_mode_xxt";
-}
-- (NSString *)secret {
-    return @"bypass_secret_offline_mode_xxt";
-}
-
-// loadAccount trả về self (object hợp lệ)
-- (id)loadAccountWithCompletion:(void (^)(id account, NSError *error))completion {
-    if (completion) {
-        // Tạo đối tượng account giả thông qua runtime để tránh crash
-        id fakeAccount = [NSObject new];
-        completion(fakeAccount, nil);
+static void swizzle(Class cls, SEL original, SEL replacement) {
+    Method origMethod = class_getInstanceMethod(cls, original);
+    Method replMethod = class_getInstanceMethod(cls, replacement);
+    if (origMethod && replMethod) {
+        method_exchangeImplementations(origMethod, replMethod);
+        return;
     }
-    return self;
+    // Instance không có thì thử class method
+    origMethod = class_getClassMethod(cls, original);
+    replMethod = class_getClassMethod(cls, replacement);
+    if (origMethod && replMethod) {
+        method_exchangeImplementations(origMethod, replMethod);
+    }
 }
 
-// removeAccount — không làm gì (giữ trạng thái bypass)
-- (void)removeAccountFromKeychain:(NSString *)key completion:(void (^)(BOOL success))completion {
-    if (completion) completion(YES);
+static void swizzleClass(Class cls, SEL original, SEL replacement) {
+    Class metaclass = object_getClass(cls);
+    Method origMethod = class_getInstanceMethod(metaclass, original);
+    Method replMethod = class_getInstanceMethod(metaclass, replacement);
+    if (origMethod && replMethod) {
+        method_exchangeImplementations(origMethod, replMethod);
+    }
 }
 
-// Lưu account — không làm gì thực, callback success
-- (void)saveAccountWithToken:(NSString *)token secret:(NSString *)secret completion:(void (^)(BOOL success, NSError *error))completion {
-    if (completion) completion(YES, nil);
-}
-
-%end
-
-
-// ─────────────────────────────────────────
-// MARK: - HVCHavocAccount
-// Object đại diện cho tài khoản Havoc
-// ─────────────────────────────────────────
-%hook HVCHavocAccount
-
-// Khởi tạo với token + secret giả
-- (instancetype)initWithEndpoint:(id)endpoint token:(NSString *)token secret:(NSString *)secret {
-    self = %orig(endpoint, @"bypass_token_offline_mode_xxt", @"bypass_secret_offline_mode_xxt");
-    return self;
-}
-
-- (NSString *)token {
-    return @"bypass_token_offline_mode_xxt";
-}
-
-- (NSString *)secret {
-    return @"bypass_secret_offline_mode_xxt";
-}
-
-// Nếu có isValid / isAuthenticated property
-- (BOOL)isValid {
-    return YES;
-}
-
-- (BOOL)isAuthenticated {
-    return YES;
-}
-
-%end
-
-
-// ─────────────────────────────────────────
-// MARK: - HVCHavocSecret
-// Object xác minh secret/payment từ Havoc
-// ─────────────────────────────────────────
-%hook HVCHavocSecret
-
-- (BOOL)isValid {
-    return YES;
-}
-
-- (BOOL)isVerified {
-    return YES;
-}
-
-- (NSString *)secret {
-    return @"bypass_secret_offline_mode_xxt";
-}
-
-%end
-
-
-// ─────────────────────────────────────────
-// MARK: - HVCHavocConfiguration
-// Config chứa endpoint và UDID
-// ─────────────────────────────────────────
-%hook HVCHavocConfiguration
-
-// Tránh crash khi app dùng config
-- (BOOL)isValid {
-    return YES;
-}
-
-%end
-
-
-// ─────────────────────────────────────────
-// MARK: - XXTEMoreLicenseController
-// Controller hiển thị UI License, check và present alert "Purchase Required"
-// ─────────────────────────────────────────
-%hook XXTEMoreLicenseController
-
-// Không hiện alert "Purchase Required"
-- (void)presentPurchaseAlert {
-    // no-op: bỏ qua hoàn toàn
-}
-
-// Không redirect sang trang mua hàng
-- (void)redirectToPurchasePage {
-    // no-op
-}
-
-- (void)redirectToMyPurchasesPage {
-    // no-op
-}
-
-// Update license dictionary — không làm gì để tránh overwrite state
-- (void)updateLicenseDictionary:(id)dict {
-    // no-op
-}
-
-%end
-
-
-// ─────────────────────────────────────────
-// MARK: - NSURLSession Block DRM + Havoc
-// Block tất cả request đến drm.82flex.com và havoc.app
-// Trả về response 200 OK với JSON {"status":"ok","valid":true}
-// ─────────────────────────────────────────
-
-static BOOL isBypassed(NSString *host) {
+static BOOL isBypassHost(NSString *host) {
     if (!host) return NO;
-    return ([host containsString:@"drm.82flex.com"] ||
-            [host containsString:@"havoc.app"]);
+    return [host containsString:@"drm.82flex.com"] ||
+           [host containsString:@"havoc.app"];
 }
 
-static NSData *fakeOKResponse() {
+static NSData *fakeOKJSON(void) {
     NSDictionary *d = @{@"status": @"ok", @"valid": @YES, @"authenticated": @YES};
     return [NSJSONSerialization dataWithJSONObject:d options:0 error:nil];
 }
 
-%hook NSURLSession
+// ─────────────────────────────────────────
+// MARK: - HVCKeychainHelper swizzle methods
+// ─────────────────────────────────────────
 
-- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request
-                            completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
-    NSString *host = request.URL.host;
-    if (isBypassed(host)) {
-        if (completionHandler) {
-            NSHTTPURLResponse *resp = [[NSHTTPURLResponse alloc]
-                initWithURL:request.URL
-                 statusCode:200
-                HTTPVersion:@"HTTP/1.1"
-               headerFields:@{@"Content-Type": @"application/json"}];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                completionHandler(fakeOKResponse(), resp, nil);
-            });
-        }
-        // Trả dummy task (không chạy)
-        return %orig([NSURLRequest requestWithURL:[NSURL URLWithString:@"about:blank"]], completionHandler);
-    }
-    return %orig;
+@interface HVCKeychainHelper_Bypass : NSObject @end
+@implementation HVCKeychainHelper_Bypass
+
++ (BOOL)bypass_accountExists { return YES; }
+- (BOOL)bypass_accountExists { return YES; }
+- (NSString *)bypass_token { return @"bypass_token_offline_xxt"; }
+- (NSString *)bypass_secret { return @"bypass_secret_offline_xxt"; }
++ (NSString *)bypass_tokenForKey:(NSString *)k { return @"bypass_token_offline_xxt"; }
++ (NSString *)bypass_secretForKey:(NSString *)k { return @"bypass_secret_offline_xxt"; }
+- (NSString *)bypass_tokenForKey:(NSString *)k { return @"bypass_token_offline_xxt"; }
+- (NSString *)bypass_secretForKey:(NSString *)k { return @"bypass_secret_offline_xxt"; }
+
+- (void)bypass_removeAccountFromKeychain:(NSString *)k completion:(void(^)(BOOL))cb {
+    if (cb) cb(YES);
+}
+- (void)bypass_saveAccountWithToken:(NSString *)t secret:(NSString *)s completion:(void(^)(BOOL, NSError *))cb {
+    if (cb) cb(YES, nil);
+}
+- (id)bypass_loadAccountWithCompletion:(void(^)(id, NSError *))cb {
+    if (cb) cb([NSObject new], nil);
+    return self;
 }
 
-- (NSURLSessionDataTask *)dataTaskWithURL:(NSURL *)url
-                        completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
-    NSString *host = url.host;
-    if (isBypassed(host)) {
-        if (completionHandler) {
+@end
+
+// ─────────────────────────────────────────
+// MARK: - HVCHavocAccount / HVCHavocSecret swizzle
+// ─────────────────────────────────────────
+
+@interface HVCAccount_Bypass : NSObject @end
+@implementation HVCAccount_Bypass
+- (BOOL)bypass_isValid         { return YES; }
+- (BOOL)bypass_isAuthenticated { return YES; }
+- (NSString *)bypass_token     { return @"bypass_token_offline_xxt"; }
+- (NSString *)bypass_secret    { return @"bypass_secret_offline_xxt"; }
+@end
+
+// ─────────────────────────────────────────
+// MARK: - XXTEMoreLicenseController swizzle
+// ─────────────────────────────────────────
+
+@interface License_Bypass : NSObject @end
+@implementation License_Bypass
+- (void)bypass_presentPurchaseAlert    {}   // no-op
+- (void)bypass_redirectToPurchasePage  {}   // no-op
+- (void)bypass_redirectToMyPurchasesPage {}
+- (void)bypass_updateLicenseDictionary:(id)d {}
+@end
+
+// ─────────────────────────────────────────
+// MARK: - NSURLSession block DRM / Havoc
+// ─────────────────────────────────────────
+
+@interface NSURLSession (Bypass) @end
+@implementation NSURLSession (Bypass)
+
+- (NSURLSessionDataTask *)bypass_dataTaskWithRequest:(NSURLRequest *)request
+                                   completionHandler:(void(^)(NSData *, NSURLResponse *, NSError *))cb {
+    if (isBypassHost(request.URL.host)) {
+        if (cb) {
             NSHTTPURLResponse *resp = [[NSHTTPURLResponse alloc]
-                initWithURL:url
-                 statusCode:200
-                HTTPVersion:@"HTTP/1.1"
-               headerFields:@{@"Content-Type": @"application/json"}];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                completionHandler(fakeOKResponse(), resp, nil);
-            });
+                initWithURL:request.URL statusCode:200
+                HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type":@"application/json"}];
+            dispatch_async(dispatch_get_main_queue(), ^{ cb(fakeOKJSON(), resp, nil); });
         }
-        return %orig([NSURL URLWithString:@"about:blank"], completionHandler);
+        // trả task không làm gì
+        return [self bypass_dataTaskWithRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:@"about:blank"]]
+                              completionHandler:nil];
     }
-    return %orig;
+    return [self bypass_dataTaskWithRequest:request completionHandler:cb];
 }
 
-%end
-
-
-// ─────────────────────────────────────────
-// MARK: - NSURLConnection Block (older API)
-// ─────────────────────────────────────────
-%hook NSURLConnection
-
-+ (void)sendAsynchronousRequest:(NSURLRequest *)request
-                           queue:(NSOperationQueue *)queue
-               completionHandler:(void (^)(NSURLResponse *, NSData *, NSError *))handler {
-    NSString *host = request.URL.host;
-    if (isBypassed(host)) {
-        if (handler) {
+- (NSURLSessionDataTask *)bypass_dataTaskWithURL:(NSURL *)url
+                               completionHandler:(void(^)(NSData *, NSURLResponse *, NSError *))cb {
+    if (isBypassHost(url.host)) {
+        if (cb) {
             NSHTTPURLResponse *resp = [[NSHTTPURLResponse alloc]
-                initWithURL:request.URL
-                 statusCode:200
-                HTTPVersion:@"HTTP/1.1"
-               headerFields:@{@"Content-Type": @"application/json"}];
-            [queue addOperationWithBlock:^{
-                handler(resp, fakeOKResponse(), nil);
-            }];
+                initWithURL:url statusCode:200
+                HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type":@"application/json"}];
+            dispatch_async(dispatch_get_main_queue(), ^{ cb(fakeOKJSON(), resp, nil); });
         }
-        return;
+        return [self bypass_dataTaskWithURL:[NSURL URLWithString:@"about:blank"] completionHandler:nil];
     }
-    %orig;
+    return [self bypass_dataTaskWithURL:url completionHandler:cb];
 }
 
-%end
-
+@end
 
 // ─────────────────────────────────────────
-// MARK: - Constructor: Pre-populate NSUserDefaults
-// Set cache email/license vào NSUserDefaults ngay khi dylib load
-// để app không hiện màn hình chưa đăng nhập
+// MARK: - Apply all swizzles
 // ─────────────────────────────────────────
-%ctor {
+
+static void applySwizzles(void) {
+
+    // ── HVCKeychainHelper ──
+    Class KC = NSClassFromString(@"HVCKeychainHelper");
+    Class KC_bp = [HVCKeychainHelper_Bypass class];
+    if (KC) {
+        swizzle(KC, @selector(accountExists), @selector(bypass_accountExists));
+        swizzle(KC, @selector(token), @selector(bypass_token));
+        swizzle(KC, @selector(secret), @selector(bypass_secret));
+        swizzle(KC, @selector(tokenForKey:), @selector(bypass_tokenForKey:));
+        swizzle(KC, @selector(secretForKey:), @selector(bypass_secretForKey:));
+        swizzle(KC, @selector(removeAccountFromKeychain:completion:),
+                @selector(bypass_removeAccountFromKeychain:completion:));
+        swizzle(KC, @selector(saveAccountWithToken:secret:completion:),
+                @selector(bypass_saveAccountWithToken:secret:completion:));
+        swizzle(KC, @selector(loadAccountWithCompletion:),
+                @selector(bypass_loadAccountWithCompletion:));
+        // class methods
+        swizzleClass(KC, @selector(accountExists), @selector(bypass_accountExists));
+        swizzleClass(KC, @selector(tokenForKey:), @selector(bypass_tokenForKey:));
+        swizzleClass(KC, @selector(secretForKey:), @selector(bypass_secretForKey:));
+    }
+    (void)KC_bp;
+
+    // ── HVCHavocAccount ──
+    Class HA = NSClassFromString(@"HVCHavocAccount");
+    if (HA) {
+        Class bp = [HVCAccount_Bypass class];
+        swizzle(HA, @selector(isValid),         @selector(bypass_isValid));
+        swizzle(HA, @selector(isAuthenticated),  @selector(bypass_isAuthenticated));
+        swizzle(HA, @selector(token),            @selector(bypass_token));
+        swizzle(HA, @selector(secret),           @selector(bypass_secret));
+        (void)bp;
+    }
+
+    // ── HVCHavocSecret ──
+    Class HS = NSClassFromString(@"HVCHavocSecret");
+    if (HS) {
+        Class bp = [HVCAccount_Bypass class];
+        swizzle(HS, @selector(isValid),    @selector(bypass_isValid));
+        swizzle(HS, @selector(isVerified), @selector(bypass_isAuthenticated));
+        swizzle(HS, @selector(secret),     @selector(bypass_secret));
+        (void)bp;
+    }
+
+    // ── XXTEMoreLicenseController ──
+    Class LC = NSClassFromString(@"XXTEMoreLicenseController");
+    if (LC) {
+        Class bp = [License_Bypass class];
+        swizzle(LC, @selector(presentPurchaseAlert),       @selector(bypass_presentPurchaseAlert));
+        swizzle(LC, @selector(redirectToPurchasePage),     @selector(bypass_redirectToPurchasePage));
+        swizzle(LC, @selector(redirectToMyPurchasesPage),  @selector(bypass_redirectToMyPurchasesPage));
+        swizzle(LC, @selector(updateLicenseDictionary:),   @selector(bypass_updateLicenseDictionary:));
+        (void)bp;
+    }
+
+    // ── NSURLSession ──
+    Class SES = [NSURLSession class];
+    swizzle(SES,
+        @selector(dataTaskWithRequest:completionHandler:),
+        @selector(bypass_dataTaskWithRequest:completionHandler:));
+    swizzle(SES,
+        @selector(dataTaskWithURL:completionHandler:),
+        @selector(bypass_dataTaskWithURL:completionHandler:));
+}
+
+// ─────────────────────────────────────────
+// MARK: - Constructor (chạy khi dylib load)
+// ─────────────────────────────────────────
+
+__attribute__((constructor))
+static void dylib_init(void) {
     @autoreleasepool {
-        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        // Set NSUserDefaults cache keys
+        NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+        if (![d objectForKey:@"kXXTEMoreLicenseCachedEmail"])
+            [d setObject:@"bypass@offline.local" forKey:@"kXXTEMoreLicenseCachedEmail"];
+        if (![d objectForKey:@"kXXTEMoreLicenseCachedLicense"])
+            [d setObject:@"BYPASS-LICENSE-OFFLINE" forKey:@"kXXTEMoreLicenseCachedLicense"];
+        [d synchronize];
 
-        // Chỉ set nếu chưa có giá trị (tránh ghi đè dữ liệu thật nếu user đã auth)
-        if (![defaults objectForKey:@"kXXTEMoreLicenseCachedEmail"]) {
-            [defaults setObject:@"bypass@offline.local" forKey:@"kXXTEMoreLicenseCachedEmail"];
-        }
-        if (![defaults objectForKey:@"kXXTEMoreLicenseCachedLicense"]) {
-            [defaults setObject:@"BYPASS-LICENSE-OFFLINE" forKey:@"kXXTEMoreLicenseCachedLicense"];
-        }
-        [defaults synchronize];
+        // Swizzle ngay khi load nếu class đã có
+        applySwizzles();
+
+        // Observer: swizzle lại khi class load muộn hơn (dynamic frameworks)
+        [[NSNotificationCenter defaultCenter]
+            addObserverForName:UIApplicationDidFinishLaunchingNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(NSNotification *n) {
+                        applySwizzles();
+                    }];
     }
 }

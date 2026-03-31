@@ -1,4 +1,4 @@
-name: Build Auth Bypass & Patch IPA
+name: Build Dylib + Patch TIPA
 
 on:
   push:
@@ -8,19 +8,23 @@ on:
   workflow_dispatch:
     inputs:
       ipa_url:
-        description: 'URL to XXTExplorer IPA/TIPA'
-        required: false
-        default: ''
+        description: 'URL tải IPA/TIPA gốc của XXTExplorer (bắt buộc để tạo TIPA patched)'
+        required: true
+        type: string
 
 jobs:
-  build-and-patch:
+  # ══════════════════════════════════════════
+  # JOB 1: Build dylib
+  # ══════════════════════════════════════════
+  build-dylib:
     runs-on: macos-14
+    outputs:
+      dylib_ready: ${{ steps.check.outputs.ready }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ─── 1. Setup Theos ───
       - name: Setup Theos
         uses: actions/checkout@v4
         with:
@@ -32,78 +36,82 @@ jobs:
       - name: Set THEOS env
         run: echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
 
-      # ─── 2. Download iOS SDKs (clone repo, lấy tất cả SDK có sẵn) ───
       - name: Download iOS SDKs
         run: |
           git clone --depth 1 https://github.com/theos/sdks.git /tmp/theos-sdks
           mkdir -p $THEOS/sdks
-          # Copy tất cả .sdk vào theos/sdks
           find /tmp/theos-sdks -maxdepth 1 -name "*.sdk" -exec cp -r {} $THEOS/sdks/ \;
-          echo "Available SDKs:"
-          ls $THEOS/sdks/
 
-      # ─── 3. Install ldid (code signing tool cho Theos) ───
       - name: Install ldid
         run: brew install ldid
 
-      # ─── 4. Build Dylib ───
       - name: Build Dylib
         working-directory: tweak
-        run: |
-          make -j$(sysctl -n hw.ncpu) THEOS=$THEOS STRIP=0 DEBUG=0 2>&1
+        run: make -j$(sysctl -n hw.ncpu) THEOS=$THEOS STRIP=0 DEBUG=0 2>&1
 
       - name: Collect Dylib
-        id: collect_dylib
+        id: check
         run: |
           mkdir -p dist
-          DYLIB=$(find tweak -name "XXTExplorerAuthBypass.dylib" | head -1)
-          if [ -z "$DYLIB" ]; then
-            DYLIB=$(find tweak -name "*.dylib" | head -1)
-          fi
+          DYLIB=$(find tweak -name "*.dylib" | grep -v unsigned | head -1)
           echo "Found: $DYLIB"
           cp "$DYLIB" dist/XXTExplorerAuthBypass.dylib
-          echo "dylib_path=$GITHUB_WORKSPACE/dist/XXTExplorerAuthBypass.dylib" >> $GITHUB_OUTPUT
+          echo "ready=true" >> $GITHUB_OUTPUT
 
-      # ─── 4. Download IPA (nếu nhập URL) ───
-      - name: Download IPA
-        id: download_ipa
-        if: ${{ inputs.ipa_url != '' }}
+      - name: Upload Dylib artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auth-bypass-dylib
+          path: dist/XXTExplorerAuthBypass.dylib
+          retention-days: 7
+
+  # ══════════════════════════════════════════
+  # JOB 2: Inject dylib vào IPA → xuất TIPA
+  # ══════════════════════════════════════════
+  patch-tipa:
+    runs-on: macos-14
+    needs: build-dylib
+
+    steps:
+      - name: Download Dylib artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: auth-bypass-dylib
+          path: dist/
+
+      - name: Download Original IPA
         run: |
-          curl -fsSL -o dist/original.ipa "${{ inputs.ipa_url }}"
-          echo "ipa_path=$GITHUB_WORKSPACE/dist/original.ipa" >> $GITHUB_OUTPUT
+          echo "Downloading IPA from: ${{ inputs.ipa_url }}"
+          curl -fL -o dist/original.ipa "${{ inputs.ipa_url }}"
+          echo "IPA size: $(du -sh dist/original.ipa)"
 
-      # ─── 5. Inject dylib vào IPA bằng Azule ───
       - name: Install Azule
-        if: steps.download_ipa.outputs.ipa_path != ''
         run: |
           git clone --depth 1 https://github.com/Al4ise/Azule /tmp/azule
           sudo ln -sf /tmp/azule/azule /usr/local/bin/azule
+          chmod +x /tmp/azule/azule
 
-      - name: Patch IPA with Azule
-        if: steps.download_ipa.outputs.ipa_path != ''
+      - name: Patch IPA
         run: |
-          azule -i dist/original.ipa \
-                -f dist/XXTExplorerAuthBypass.dylib \
-                -o dist/XXTExplorer_Patched.ipa \
-                -n
-          # Đổi sang .tipa để cài TrollStore
-          cp dist/XXTExplorer_Patched.ipa dist/XXTExplorer_Patched.tipa
-          echo "Patched size: $(du -sh dist/XXTExplorer_Patched.tipa)"
-
-      # ─── 6. Upload artifacts ───
-      - name: Upload Dylib
-        uses: actions/upload-artifact@v4
-        with:
-          name: XXTExplorerAuthBypass-dylib
-          path: dist/XXTExplorerAuthBypass.dylib
-          retention-days: 30
+          ls -la dist/
+          mkdir -p output
+          azule \
+            -i dist/original.ipa \
+            -f dist/XXTExplorerAuthBypass.dylib \
+            -o output
+          echo "Output files:"
+          ls -la output/
+          # Tìm file IPA được tạo ra và đổi sang .tipa
+          PATCHED=$(find output -name "*.ipa" | head -1)
+          echo "Patched IPA: $PATCHED"
+          cp "$PATCHED" dist/XXTExplorer_Bypass.tipa
+          echo "Patched TIPA size: $(du -sh dist/XXTExplorer_Bypass.tipa)"
 
       - name: Upload Patched TIPA
-        if: steps.download_ipa.outputs.ipa_path != ''
         uses: actions/upload-artifact@v4
         with:
-          name: XXTExplorer-Patched-TIPA
+          name: XXTExplorer-Bypass-TIPA
           path: |
-            dist/XXTExplorer_Patched.tipa
-            dist/XXTExplorer_Patched.ipa
+            dist/XXTExplorer_Bypass.tipa
+            dist/XXTExplorer_Bypass.ipa
           retention-days: 30
