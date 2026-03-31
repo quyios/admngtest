@@ -36,11 +36,15 @@ jobs:
           echo "Available SDKs:"
           ls $THEOS/sdks/
 
+      # ─── Install ldid ───
+      - name: Install ldid
+        run: brew install ldid
+
       # ─── Build patcher app ───
       - name: Build Patcher App
         working-directory: patcher
         run: |
-          make -j$(nproc) \
+          make -j$(sysctl -n hw.ncpu) \
             THEOS=$THEOS \
             STRIP=0 \
             DEBUG=0 \

@@ -42,11 +42,15 @@ jobs:
           echo "Available SDKs:"
           ls $THEOS/sdks/
 
-      # ─── 3. Build Dylib ───
+      # ─── 3. Install ldid (code signing tool cho Theos) ───
+      - name: Install ldid
+        run: brew install ldid
+
+      # ─── 4. Build Dylib ───
       - name: Build Dylib
         working-directory: tweak
         run: |
-          make -j$(nproc) THEOS=$THEOS STRIP=0 DEBUG=0 2>&1
+          make -j$(sysctl -n hw.ncpu) THEOS=$THEOS STRIP=0 DEBUG=0 2>&1
 
       - name: Collect Dylib
         id: collect_dylib
