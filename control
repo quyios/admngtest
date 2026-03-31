@@ -1,9 +1,9 @@
-Package: com.yourcompany.ambackuphelper
-Name: AMBackupHelper
-Depends: mobilesubstrate
-Version: 0.0.1
-Architecture: iphoneos-arm
-Description: Adds sorting and sequential backup restoration to Apps Manager.
-Maintainer: Antigravity
-Author: Antigravity
-Section: Tweaks
+Package: com.quyios.xxte-patcher
+Name: XXTExplorer Auth Patcher
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Standalone patcher app for TrollStore.
+ Writes fake Keychain entries for XXTExplorer to enable offline use.
+Section: Applications
+Maintainer: quyios
+Author: quyios
