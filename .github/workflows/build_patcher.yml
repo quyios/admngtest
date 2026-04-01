@@ -55,20 +55,45 @@ jobs:
         run: |
           mkdir -p dist
           
-          # Tìm .app bundle từ build output
-          APP_BUNDLE=$(find patcher -name "XXTEPatcher.app" -type d | head -1)
+          # Tìm .app bundle vừa build
+          APP_BUNDLE=$(find patcher/.theos -name "*.app" -type d | head -1)
+          if [ -z "$APP_BUNDLE" ]; then
+            APP_BUNDLE=$(find patcher -name "*.app" -type d | head -1)
+          fi
+          
           echo "Found app bundle: $APP_BUNDLE"
           
           if [ -n "$APP_BUNDLE" ]; then
+            # Tạo thư mục Payload tạm thời
             mkdir -p /tmp/Payload
             cp -r "$APP_BUNDLE" /tmp/Payload/
+            
+            # Đảm bảo Info.plist nằm đúng chỗ (iOS yêu cầu inside .app)
+            BUNDLE_NAME=$(basename "$APP_BUNDLE")
+            TARGET_APP="/tmp/Payload/$BUNDLE_NAME"
+            
+            cp patcher/Info.plist "$TARGET_APP/"
+            # Entitlements thường được nhúng vào binary nhưng TrollStore thích có file ngoài để test
+            cp patcher/Entitlements.plist "$TARGET_APP/"
+            
+            echo "Contents of $BUNDLE_NAME:"
+            ls -la "$TARGET_APP/"
+            
+            # Kiểm tra xem có Info.plist chưa
+            if [ ! -f "$TARGET_APP/Info.plist" ]; then
+              echo "ERROR: Info.plist still missing!"
+              exit 1
+            fi
+            
+            # Đóng gói zip
             cd /tmp
-            zip -r - Payload/ > $GITHUB_WORKSPACE/dist/XXTEPatcher.ipa
-            cp $GITHUB_WORKSPACE/dist/XXTEPatcher.ipa $GITHUB_WORKSPACE/dist/XXTEPatcher.tipa
-            echo "Packaged: $(du -sh $GITHUB_WORKSPACE/dist/XXTEPatcher.tipa)"
+            zip -r XXTEPatcher.ipa Payload/
+            cp XXTEPatcher.ipa $GITHUB_WORKSPACE/dist/XXTEPatcher.tipa
+            cp XXTEPatcher.ipa $GITHUB_WORKSPACE/dist/XXTEPatcher.ipa
+            
+            echo "Packaged TIPA: $(ls -lh $GITHUB_WORKSPACE/dist/XXTEPatcher.tipa)"
           else
             echo "ERROR: Cannot find .app bundle"
-            find patcher -type d | head -30
             exit 1
           fi
 
