@@ -109,12 +109,12 @@ jobs:
             # Thêm inject vào ngserviced, lua, luac
             BIN_DIR="$APP_DIR/.jbroot-ABCDEF1234567890/usr/local/xxtouch/bin"
             
-            # Tính toán đường dẫn tương đối từ bin/ đến thư mục chứa dylib (thường là góc .app hoặc Frameworks)
+            # Tính toán đường dẫn tương đối từ bin/ đến thư mục chứa dylib (nằm trong Frameworks do Azule patch)
             for BIN_FILE in "$BIN_DIR"/*; do
               if [ -f "$BIN_FILE" ]; then
                 echo "Injecting into $BIN_FILE..."
-                # Đường dẫn để dyld tìm thấy file dylib bảo vệ của chúng ta (5 lớp lùi về .app root)
-                insert_dylib --all-yes --inplace "@executable_path/../../../../../XXTExplorerAuthBypass.dylib" "$BIN_FILE" || true
+                # Đường dẫn để dyld tìm thấy file dylib bảo vệ của chúng ta (5 lớp lùi về .app root rồi vào Frameworks/)
+                insert_dylib --all-yes --inplace "@executable_path/../../../../../Frameworks/XXTExplorerAuthBypass.dylib" "$BIN_FILE" || true
               fi
             done
             
