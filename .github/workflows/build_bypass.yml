@@ -89,10 +89,11 @@ jobs:
 
       - name: Deep Inject into Daemons
         run: |
-          # Tải insert_dylib bản biên dịch sẵn thay vì xcodebuild để không bị treo
-          curl -fL -o /tmp/insert_dylib "https://github.com/Tyilo/insert_dylib/releases/download/v0.1.4/insert_dylib"
-          chmod +x /tmp/insert_dylib
-          sudo mv /tmp/insert_dylib /usr/local/bin/
+          # Biên dịch trực tiếp insert_dylib từ source C bằng clang siêu tốc để tránh treo
+          git clone --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/insert_dylib
+          cd /tmp/insert_dylib
+          clang insert_dylib/main.c -o insert_dylib
+          sudo mv insert_dylib /usr/local/bin/
           
           # Giải nén TIPA đã được Azule patch
           mkdir -p /tmp/deep_patch
