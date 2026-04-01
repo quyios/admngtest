@@ -109,44 +109,12 @@ static NSDictionary *performPatch(void) {
     return results;
 }
 
-static NSDictionary *performClear(void) {
-    NSMutableDictionary *results = [NSMutableDictionary dictionary];
-    
-    NSArray *services = @[
-        [KC_SERVICE_BASE stringByAppendingString:@".token"],
-        [KC_SERVICE_BASE stringByAppendingString:@".secret"],
-        [KC_SERVICE_BASE stringByAppendingString:@".updated_at"]
-    ];
-    
-    for (NSString *service in services) {
-        NSDictionary *query = @{
-            (__bridge id)kSecClass:           (__bridge id)kSecClassGenericPassword,
-            (__bridge id)kSecAttrService:     service,
-            (__bridge id)kSecAttrAccount:     XXTEXPLORER_BUNDLE_ID,
-            (__bridge id)kSecAttrAccessGroup: KC_ACCESS_GROUP,
-        };
-        OSStatus status = SecItemDelete((__bridge CFDictionaryRef)query);
-        results[service] = (status == errSecSuccess) ? @"✅ Deleted" : (status == errSecItemNotFound ? @"ℹ️ Not Found" : @"❌ Error");
-    }
-    
-    // Clear our own defaults too
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults removeObjectForKey:@"kXXTEMoreLicenseCachedEmail"];
-    [defaults removeObjectForKey:@"kXXTEMoreLicenseCachedLicense"];
-    [defaults removeObjectForKey:@"XXTPatcherApplied"];
-    [defaults synchronize];
-    results[@"userdefaults"] = @"✅ Cleared";
-    
-    return results;
-}
-
 // ──────────────────────────────────────────
 // MARK: - ViewController
 // ──────────────────────────────────────────
 
 @interface ViewController : UIViewController
 @property (strong, nonatomic) UIButton *patchButton;
-@property (strong, nonatomic) UIButton *clearButton;
 @property (strong, nonatomic) UITextView *logView;
 @property (strong, nonatomic) UIActivityIndicatorView *spinner;
 @end
@@ -155,39 +123,37 @@ static NSDictionary *performClear(void) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"XXTE Auth Patcher";
+    self.title = @"XXTExplorer Auth Patcher";
     self.view.backgroundColor = [UIColor systemBackgroundColor];
     
     // Logo label
     UILabel *titleLabel = [[UILabel alloc] init];
-    titleLabel.text = @"🔓 XXTExplorer\nAuth Bypass Tool";
+    titleLabel.text = @"🔓 XXTExplorer\nAuth Bypass Patcher";
     titleLabel.font = [UIFont boldSystemFontOfSize:22];
     titleLabel.textAlignment = NSTextAlignmentCenter;
     titleLabel.numberOfLines = 2;
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:titleLabel];
     
+    UILabel *descLabel = [[UILabel alloc] init];
+    descLabel.text = @"Ghi fake token/secret vào Keychain của\nXXTExplorer để chạy offline không cần auth";
+    descLabel.font = [UIFont systemFontOfSize:14];
+    descLabel.textColor = [UIColor secondaryLabelColor];
+    descLabel.textAlignment = NSTextAlignmentCenter;
+    descLabel.numberOfLines = 0;
+    descLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:descLabel];
+    
     // Patch button
     self.patchButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.patchButton setTitle:@"  Patch (Bypass)  " forState:UIControlStateNormal];
-    self.patchButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+    [self.patchButton setTitle:@"  Patch Now  " forState:UIControlStateNormal];
+    self.patchButton.titleLabel.font = [UIFont boldSystemFontOfSize:18];
     self.patchButton.backgroundColor = [UIColor systemBlueColor];
     [self.patchButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    self.patchButton.layer.cornerRadius = 12;
+    self.patchButton.layer.cornerRadius = 14;
     self.patchButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.patchButton addTarget:self action:@selector(patchTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.patchButton];
-    
-    // Clear button
-    self.clearButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.clearButton setTitle:@"  Clear License (Reset)  " forState:UIControlStateNormal];
-    self.clearButton.titleLabel.font = [UIFont systemFontOfSize:15];
-    self.clearButton.backgroundColor = [UIColor systemGray5Color];
-    [self.clearButton setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
-    self.clearButton.layer.cornerRadius = 12;
-    self.clearButton.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.clearButton addTarget:self action:@selector(clearTapped) forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:self.clearButton];
     
     // Spinner
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
@@ -197,33 +163,37 @@ static NSDictionary *performClear(void) {
     
     // Log text view
     self.logView = [[UITextView alloc] init];
-    self.logView.font = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular];
+    self.logView.font = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightRegular];
     self.logView.backgroundColor = [UIColor secondarySystemBackgroundColor];
-    self.logView.layer.cornerRadius = 8;
+    self.logView.layer.cornerRadius = 10;
     self.logView.editable = NO;
-    self.logView.text = @"Ready.\nTarget: ch.xxtou.XXTExplorer\nAccess Group: GXZ23M5TP2.ch.xxtou.XXTExplorer\n";
+    self.logView.text = @"Log sẽ hiện ở đây sau khi patch...\n\n"
+                         @"Target: ch.xxtou.XXTExplorer\n"
+                         @"Access Group: GXZ23M5TP2.ch.xxtou.XXTExplorer\n";
     self.logView.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.logView];
     
     // ─── Constraints ───
     [NSLayoutConstraint activateConstraints:@[
-        [titleLabel.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:30],
+        [titleLabel.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:40],
         [titleLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [titleLabel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:20],
+        [titleLabel.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-20],
         
-        [self.patchButton.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:30],
+        [descLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:12],
+        [descLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [descLabel.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:20],
+        [descLabel.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-20],
+        
+        [self.patchButton.topAnchor constraintEqualToAnchor:descLabel.bottomAnchor constant:32],
         [self.patchButton.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [self.patchButton.widthAnchor constraintEqualToConstant:220],
-        [self.patchButton.heightAnchor constraintEqualToConstant:44],
-        
-        [self.clearButton.topAnchor constraintEqualToAnchor:self.patchButton.bottomAnchor constant:12],
-        [self.clearButton.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [self.clearButton.widthAnchor constraintEqualToConstant:220],
-        [self.clearButton.heightAnchor constraintEqualToConstant:44],
+        [self.patchButton.widthAnchor constraintEqualToConstant:200],
+        [self.patchButton.heightAnchor constraintEqualToConstant:52],
         
         [self.spinner.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [self.spinner.topAnchor constraintEqualToAnchor:self.clearButton.bottomAnchor constant:10],
+        [self.spinner.topAnchor constraintEqualToAnchor:self.patchButton.bottomAnchor constant:16],
         
-        [self.logView.topAnchor constraintEqualToAnchor:self.spinner.bottomAnchor constant:15],
+        [self.logView.topAnchor constraintEqualToAnchor:self.spinner.bottomAnchor constant:20],
         [self.logView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
         [self.logView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
         [self.logView.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-20],
@@ -233,34 +203,45 @@ static NSDictionary *performClear(void) {
 - (void)patchTapped {
     self.patchButton.enabled = NO;
     [self.spinner startAnimating];
-    self.logView.text = @"Applying patch...\n";
+    self.logView.text = @"Đang patch...\n";
     
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSDictionary *results = performPatch();
-        NSMutableString *log = [NSMutableString stringWithString:@"=== Patch Results ===\n"];
-        [log appendFormat:@"Token: %@\nSecret: %@\n", results[@"keychain_token"], results[@"keychain_secret"]];
+        
+        NSMutableString *log = [NSMutableString string];
+        [log appendString:@"=== Patch Results ===\n\n"];
+        
+        [log appendFormat:@"• Keychain Token:      %@\n", results[@"keychain_token"]];
+        [log appendFormat:@"• Keychain Secret:     %@\n", results[@"keychain_secret"]];
+        [log appendFormat:@"• Keychain updated_at: %@\n", results[@"keychain_updated_at"]];
+        [log appendFormat:@"• Verify Read:         %@\n", results[@"verify_read"]];
+        [log appendFormat:@"• NSUserDefaults:      %@\n\n", results[@"userdefaults"]];
+        
+        BOOL allOK = [results[@"keychain_token"] hasPrefix:@"✅"] &&
+                     [results[@"keychain_secret"] hasPrefix:@"✅"];
+        
+        if (allOK) {
+            [log appendString:@"✅ PATCH THÀNH CÔNG!\n\n"];
+            [log appendString:@"→ Mở XXTExplorer, app sẽ đọc token từ\n  Keychain và không yêu cầu đăng nhập.\n\n"];
+            [log appendString:@"⚠️ Lưu ý: Nếu Keychain của XXTExplorer\n"];
+            [log appendString:@"  bị sandbox chặn cross-app, cần inject\n"];
+            [log appendString:@"  dylib trực tiếp vào TIPA (xem README).\n"];
+        } else {
+            [log appendString:@"⚠️ Một số bước thất bại.\n\n"];
+            [log appendString:@"Cross-app Keychain write có thể bị chặn.\n"];
+            [log appendString:@"→ Dùng phương pháp inject dylib thay thế.\n"];
+            [log appendString:@"→ Xem tweak/Tweak.x và build workflow.\n"];
+        }
+        
+        [log appendFormat:@"\nBundle ID target: %@\n", XXTEXPLORER_BUNDLE_ID];
+        [log appendFormat:@"Token: %@\n", FAKE_TOKEN];
+        [log appendFormat:@"Secret: %@\n", FAKE_SECRET];
+        
         dispatch_async(dispatch_get_main_queue(), ^{
             [self.spinner stopAnimating];
             self.patchButton.enabled = YES;
-            self.logView.text = log;
-        });
-    });
-}
-
-- (void)clearTapped {
-    self.clearButton.enabled = NO;
-    [self.spinner startAnimating];
-    self.logView.text = @"Clearing license data...\n";
-    
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSDictionary *results = performClear();
-        NSMutableString *log = [NSMutableString stringWithString:@"=== Clear Results ===\n"];
-        for (NSString *key in results) {
-            [log appendFormat:@"%@: %@\n", [key lastPathComponent], results[key]];
-        }
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self.spinner stopAnimating];
-            self.clearButton.enabled = YES;
+            [self.patchButton setTitle:@"  Patch Again  " forState:UIControlStateNormal];
+            self.patchButton.backgroundColor = allOK ? [UIColor systemGreenColor] : [UIColor systemOrangeColor];
             self.logView.text = log;
         });
     });
