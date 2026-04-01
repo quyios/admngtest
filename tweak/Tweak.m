@@ -1,11 +1,12 @@
 /*
- * XXTExplorer Havoc Auth Bypass - TrollStore Edition (v22)
+ * XXTExplorer Havoc Auth Bypass - TrollStore Edition (v23)
  *
- * THE SAFE UI-ONLY STRATEGY:
- * 1. KHÔNG HOOK NETWORK (NSURLSession) để tránh crash do PromiseKit.
- * 2. Chỉ Bịt miệng Alert (UI Suppression).
- * 3. Ép nội dung Label.
- * 4. Fake Account properties.
+ * THE SHOTGUN SWIZZLER STRATEGY:
+ * 1. Không dùng Network Hook để tránh crash nền (giữ nguyên độ ổn định v22).
+ * 2. Giữ nguyên UI Suppression (bịt miệng UIAlert "Purchase Required").
+ * 3. Duyệt toàn bộ Class trong Runtime. Tìm các Class liên quan đến XXTouch/License.
+ * 4. Hook tự động tất cả các hàm kiểm duyệt (isRegistered, isAuthorized, isValid...) trả về YES.
+ * 5. Bẻ gãy lỗi "E430: This device is not authorized..." từ tận gốc rễ daemons.
  */
 
 #import <Foundation/Foundation.h>
@@ -33,7 +34,7 @@ static void XXTLog(NSString *format, ...) {
     NSString *timestampMsg = [NSString stringWithFormat:@"[%@] %@\n", [NSDate date], msg];
     NSLog(@"[XXT_BYPASS] %@", msg);
     
-    // Write to /tmp for easy access via Filza if needed
+    // Ghi log để theo dõi chính xác hàm nào bị Shotgun bắn trúng
     NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:kLOG_PATH];
     if (!handle) {
         [[NSFileManager defaultManager] createFileAtPath:kLOG_PATH contents:nil attributes:nil];
@@ -47,7 +48,7 @@ static void XXTLog(NSString *format, ...) {
 }
 
 // ─────────────────────────────────────────
-// MARK: - Safe Swizzle
+// MARK: - Classic Safe Swizzle
 // ─────────────────────────────────────────
 
 static void swizzle(Class cls, SEL original, SEL replacement) {
@@ -56,91 +57,121 @@ static void swizzle(Class cls, SEL original, SEL replacement) {
     Method replMethod = class_getInstanceMethod(cls, replacement);
     if (origMethod && replMethod) {
         method_exchangeImplementations(origMethod, replMethod);
-        XXTLog(@"Swizzled -[%@ %@] with -[%@ %@]", NSStringFromClass(cls), NSStringFromSelector(original), NSStringFromClass(cls), NSStringFromSelector(replacement));
+        XXTLog(@"Core Swizzled -[%@ %@]", NSStringFromClass(cls), NSStringFromSelector(original));
     }
 }
 
 // ─────────────────────────────────────────
-// MARK: - Hook Categories
+// MARK: - UI Suppression (from v22)
 // ─────────────────────────────────────────
 
-@interface UILabel (BypassV22) @end
-@implementation UILabel (BypassV22)
-- (void)bp_v22_setText:(NSString *)text {
+@interface UILabel (BypassV23) @end
+@implementation UILabel (BypassV23)
+- (void)bp_v23_setText:(NSString *)text {
     if (text && [text isKindOfClass:[NSString class]]) {
         if ([text containsString:@"Not Registered"]) text = @"Registered";
-        else if ([text containsString:@"Unauthorized device"]) text = @"Elite Active (TrollStore - v22)";
+        else if ([text containsString:@"Unauthorized device"]) text = @"Elite Active (TrollStore - v23)";
     }
-    [self bp_v22_setText:text];
+    [self bp_v23_setText:text];
 }
 @end
 
-@interface UIViewController (BypassV22) @end
-@implementation UIViewController (BypassV22)
-- (void)bp_v22_pv:(UIViewController *)vc animated:(BOOL)flag completion:(void (^)(void))cb {
+@interface UIViewController (BypassV23) @end
+@implementation UIViewController (BypassV23)
+- (void)bp_v23_pv:(UIViewController *)vc animated:(BOOL)flag completion:(void (^)(void))cb {
     if ([vc isKindOfClass:[UIAlertController class]]) {
         UIAlertController *a = (UIAlertController *)vc;
-        // Bắt chính xác thông báo lỗi mua hàng
         if ([a.title containsString:@"Purchase Required"] || [a.message containsString:@"XXTouch Elite TS"]) {
             XXTLog(@"Blocked 'Purchase Required' Alert!");
             if (cb) cb();
-            return; // Im lặng bỏ qua
+            return; 
         }
     }
-    [self bp_v22_pv:vc animated:flag completion:cb];
+    [self bp_v23_pv:vc animated:flag completion:cb];
 }
 @end
 
 // ─────────────────────────────────────────
-// MARK: - Fake Account Object
+// MARK: - Fake Account Property Methods
 // ─────────────────────────────────────────
 
-@interface XXTFakeAccountV22 : NSObject @end
-@implementation XXTFakeAccountV22
-- (BOOL)isValid            { return YES; }
-- (BOOL)isAuthenticated    { return YES; }
-- (BOOL)isRegistered       { return YES; }
-- (BOOL)isAuthorized       { return YES; }
-- (NSString *)token        { return kBYPASS_TOKEN; }
-- (NSString *)secret       { return kBYPASS_SECRET; }
-- (id)purchasedPackages    { return @[@{@"identifier": @"ch.xxtou.xxtouch.elitets", @"name": @"XXTouch Elite TS"}]; }
-- (BOOL)hasPurchasedPackageWithIdentifier:(id)ident { return YES; }
-@end
+static id fakeToken(id self, SEL _cmd) { return kBYPASS_TOKEN; }
+static id fakeSecret(id self, SEL _cmd) { return kBYPASS_SECRET; }
+static id fakePackages(id self, SEL _cmd) { return @[@{@"identifier": @"ch.xxtou.xxtouch.elitets", @"name": @"XXTouch Elite TS"}]; }
+static BOOL fakeAlwaysTrue(id self, SEL _cmd, ...) { return YES; }
 
 // ─────────────────────────────────────────
-// MARK: - Main Apply
+// MARK: - The Shotgun Swizzler
 // ─────────────────────────────────────────
 
-static void applyV22Bypass(void) {
-    XXTLog(@"Applying Safe UI-Only Bypass v22...");
+static void applyShotgunBypass(void) {
+    XXTLog(@"--- STARTING SHOTGUN SWIZZLER v23 ---");
     
     // 1. Hook UI để làm sạch giao diện và chặn Alert
-    swizzle([UILabel class], @selector(setText:), @selector(bp_v22_setText:));
-    swizzle([UIViewController class], @selector(presentViewController:animated:completion:), @selector(bp_v22_pv:animated:completion:));
+    swizzle([UILabel class], @selector(setText:), @selector(bp_v23_setText:));
+    swizzle([UIViewController class], @selector(presentViewController:animated:completion:), @selector(bp_v23_pv:animated:completion:));
 
-    // 2. Hook Data Logic: Chỉ thay thế các thuộc tính của Tài Khoản và Controller (Safe)
-    Class LC = NSClassFromString(@"XXTEMoreLicenseController");
-    if (LC) {
-        class_replaceMethod(LC, @selector(isAuthorized), imp_implementationWithBlock(^BOOL(id self){ return YES; }), "B@:");
-        class_replaceMethod(LC, @selector(isRegistered), imp_implementationWithBlock(^BOOL(id self){ return YES; }), "B@:");
-        class_replaceMethod(LC, @selector(isActivated),  imp_implementationWithBlock(^BOOL(id self){ return YES; }), "B@:");
-        XXTLog(@"Hooked XXTEMoreLicenseController");
+    // Các hàm mục tiêu cần đổi thành YES (trả về kiểu BOOL)
+    NSArray *boolTargets = @[@"isAuthorized", @"isRegistered", @"isActivated", @"isValid", @"isAuthenticated", @"hasPurchasedPackageWithIdentifier:"];
+    
+    int numClasses = objc_getClassList(NULL, 0);
+    if (numClasses > 0) {
+        Class *classes = (__unsafe_unretained Class *)malloc(sizeof(Class) * numClasses);
+        numClasses = objc_getClassList(classes, numClasses);
+        for (int i = 0; i < numClasses; i++) {
+            Class cls = classes[i];
+            NSString *className = NSStringFromClass(cls);
+            
+            // Lọc các Class khả nghi: Bắt đầu bằng XXT, HVC, hoặc có chữ License, Auth, Daemon
+            if ([className hasPrefix:@"XXT"] || [className hasPrefix:@"HVC"] || 
+                [className containsString:@"License"] || [className containsString:@"Auth"] || [className containsString:@"Daemon"]) {
+                
+                // A. Shotgun phương thức trả về BOOL
+                for (NSString *selStr in boolTargets) {
+                    SEL sel = NSSelectorFromString(selStr);
+                    
+                    // Instance Methods
+                    Method m = class_getInstanceMethod(cls, sel);
+                    if (m) {
+                        const char *type = method_getTypeEncoding(m);
+                        if (type && (type[0] == 'B' || type[0] == 'c')) {
+                            class_replaceMethod(cls, sel, (IMP)fakeAlwaysTrue, type);
+                            XXTLog(@"[X] Hijacked Instance Method -[%@ %@]", className, selStr);
+                        }
+                    }
+                    
+                    // Class Methods
+                    Method cm = class_getClassMethod(cls, sel);
+                    if (cm) {
+                        const char *type = method_getTypeEncoding(cm);
+                        if (type && (type[0] == 'B' || type[0] == 'c')) {
+                            class_replaceMethod(object_getClass(cls), sel, (IMP)fakeAlwaysTrue, type);
+                            XXTLog(@"[X] Hijacked Class Method +[%@ %@]", className, selStr);
+                        }
+                    }
+                }
+                
+                // B. Shotgun các thuộc tính Token/Secret của HavocAccount
+                if ([className isEqualToString:@"HVCHavocAccount"]) {
+                    class_replaceMethod(cls, NSSelectorFromString(@"token"), (IMP)fakeToken, "@@:");
+                    class_replaceMethod(cls, NSSelectorFromString(@"secret"), (IMP)fakeSecret, "@@:");
+                    class_replaceMethod(cls, NSSelectorFromString(@"purchasedPackages"), (IMP)fakePackages, "@@:");
+                    class_replaceMethod(object_getClass(cls), NSSelectorFromString(@"currentAccount"), imp_implementationWithBlock(^id(id self){
+                        id fakeObj = [[cls alloc] init];
+                        return fakeObj;
+                    }), "@@:");
+                    XXTLog(@"[X] Hijacked HVCHavocAccount Properties");
+                }
+            }
+        }
+        free(classes);
     }
-
-    Class HA = NSClassFromString(@"HVCHavocAccount");
-    if (HA) {
-        id fake = [XXTFakeAccountV22 new];
-        class_replaceMethod(object_getClass(HA), @selector(currentAccount), imp_implementationWithBlock(^id(id self){ return fake; }), "@@:");
-        class_replaceMethod(HA, @selector(isValid), imp_implementationWithBlock(^BOOL(id self){ return YES; }), "B@:");
-        class_replaceMethod(HA, @selector(isRegistered), imp_implementationWithBlock(^BOOL(id self){ return YES; }), "B@:");
-        class_replaceMethod(HA, @selector(hasPurchasedPackageWithIdentifier:), imp_implementationWithBlock(^BOOL(id self, id arg){ return YES; }), "B@:@");
-        XXTLog(@"Hooked HVCHavocAccount");
-    }
+    XXTLog(@"--- SHOTGUN SWIZZLER DONE ---");
 }
 
 __attribute__((constructor))
 static void dylib_init(void) {
     @autoreleasepool {
-        applyV22Bypass();
+        applyShotgunBypass();
     }
 }
