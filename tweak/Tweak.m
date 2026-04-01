@@ -1,10 +1,9 @@
 /*
- * XXTExplorer Havoc Auth Bypass - TrollStore Edition (v13)
+ * XXTExplorer Havoc Auth Bypass - TrollStore Edition (v14)
  *
- * HARDCORE UI SUPPRESSION:
- * 1. Chặn đứng UIAlertController "Purchase Required".
- * 2. Tự động "bấm" Later để app tiếp tục chạy.
- * 3. Ép Token thật của bạn vào mọi nơi.
+ * 82FLEX DRM INTERCEPT:
+ * 1. Chặn request đến drm.82flex.com/api/v2/device_info_ts.
+ * 2. Trả về JSON Elite vĩnh viễn.
  */
 
 #import <Foundation/Foundation.h>
@@ -20,9 +19,8 @@
 static NSString *const kBYPASS_TOKEN   = @"13054349313ab35797213fc6df498da9589b7827ef7301e357bd73bacf6af77c";
 static NSString *const kBYPASS_SECRET  = @"2677399ede86a2742b7097e53aa31ced59f435bc9267bf9da80cb4defcd16e78";
 static NSString *const kSUCCESS_URL    = @"sileo://authentication_success?token=13054349313ab35797213fc6df498da9589b7827ef7301e357bd73bacf6af77c&payment_secret=2677399ede86a2742b7097e53aa31ced59f435bc9267bf9da80cb4defcd16e78";
-static NSString *const kELITE_PACKAGE  = @"ch.xxtou.xxtouch.elitets";
 
-static char const *const kCompletionBlockKeyV13 = "kCompletionBlockKeyV13";
+static char const *const kCompletionBlockKeyV14 = "kCompletionBlockKeyV14";
 
 // ─────────────────────────────────────────
 // MARK: - Safe Swizzle
@@ -38,105 +36,116 @@ static void swizzle(Class cls, SEL original, SEL replacement) {
 }
 
 // ─────────────────────────────────────────
-// MARK: - UI Hooks (Hardcore Suppression)
+// MARK: - Fake Responses
 // ─────────────────────────────────────────
 
-@interface UIViewController (BypassV13) @end
-@implementation UIViewController (BypassV13)
+static NSData *fakeDRMResponse(void) {
+    NSDictionary *d = @{
+        @"status": @"success",
+        @"success": @YES,
+        @"data": @{
+            @"is_activated": @YES,
+            @"is_registered": @YES,
+            @"license_type": @"elite",
+            @"expiry_date": @"2099-01-01",
+            @"email": @"bypass@offline.local",
+            @"packages": @[@"ch.xxtou.xxtouch.elitets", @"xxtouchelitets"]
+        }
+    };
+    return [NSJSONSerialization dataWithJSONObject:d options:0 error:nil];
+}
 
-- (void)bp_v13_presentViewController:(UIViewController *)vc animated:(BOOL)flag completion:(void (^)(void))completion {
+// ─────────────────────────────────────────
+// MARK: - Hooks Implementation
+// ─────────────────────────────────────────
+
+@interface XXTUIHooksV14 : NSObject @end
+@implementation XXTUIHooksV14
+
+// Intercept Alerts
+- (void)bp_v14_presentViewController:(UIViewController *)vc animated:(BOOL)flag completion:(void (^)(void))completion {
     if ([vc isKindOfClass:[UIAlertController class]]) {
         UIAlertController *alert = (UIAlertController *)vc;
         if ([alert.title containsString:@"Purchase Required"] || [alert.message containsString:@"XXTouch Elite TS"]) {
-            NSLog(@"[XXT] Blocking 'Purchase Required' Alert.");
             if (completion) completion();
-            return; // Chặn đứng, không cho hiện
+            return; 
         }
     }
-    [self bp_v13_presentViewController:vc animated:flag completion:completion];
+    [self bp_v14_presentViewController:vc animated:flag completion:completion];
 }
 
-@end
-
-@interface UILabel (BypassV13) @end
-@implementation UILabel (BypassV13)
-- (void)bp_v13_setText:(NSString *)text {
+// Intercept Labels
+- (void)bp_v14_setText:(NSString *)text {
     if (text && [text isKindOfClass:[NSString class]]) {
-        if ([text containsString:@"Not Registered"]) text = @"Registered (v13)";
-        else if ([text containsString:@"Unauthorized device"]) text = @"Elite Active (TrollStore Bypass)";
+        if ([text containsString:@"Not Registered"]) text = @"Registered";
+        else if ([text containsString:@"Unauthorized device"]) text = @"Elite Active (TrollStore)";
     }
-    [self bp_v13_setText:text];
+    [self bp_v14_setText:text];
 }
+
 @end
 
-// ─────────────────────────────────────────
-// MARK: - Fake Models
-// ─────────────────────────────────────────
+@interface NSURLSession (BypassV14) @end
+@implementation NSURLSession (BypassV14)
 
-@interface XXTFakePackageV13 : NSObject @end
-@implementation XXTFakePackageV13
-- (id)identifier { return kELITE_PACKAGE; }
-- (id)name       { return @"XXTouch Elite TS"; }
-- (BOOL)isPurchased { return YES; }
-@end
+- (NSURLSessionDataTask *)bp_v14_dataTaskWithRequest:(NSURLRequest *)req completionHandler:(void(^)(NSData*,NSURLResponse*,NSError*))cb {
+    NSString *url = req.URL.absoluteString;
+    // Chặn cả Havoc user_info và 82Flex device_info_ts
+    if ([url containsString:@"havoc.app/api/sileo/user_info"] || [url containsString:@"82flex.com/api/v2/device_info_ts"]) {
+        NSLog(@"[XXT] Intercepted DRM/Auth Request: %@", url);
+        if (cb) {
+            NSHTTPURLResponse *resp = [[NSHTTPURLResponse alloc] initWithURL:req.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type":@"application/json"}];
+            dispatch_async(dispatch_get_main_queue(), ^{ cb(fakeDRMResponse(), resp, nil); });
+        }
+        return [[NSURLSession sharedSession] dataTaskWithURL:[NSURL URLWithString:@"about:blank"]];
+    }
+    return [self bp_v14_dataTaskWithRequest:req completionHandler:cb];
+}
 
-@interface XXTFakeAccountV13 : NSObject @end
-@implementation XXTFakeAccountV13
-- (BOOL)isValid            { return YES; }
-- (BOOL)isAuthenticated    { return YES; }
-- (BOOL)isRegistered       { return YES; }
-- (BOOL)isAuthorized       { return YES; }
-- (NSString *)token        { return kBYPASS_TOKEN; }
-- (NSString *)secret       { return kBYPASS_SECRET; }
-- (NSArray *)purchasedPackages { return @[[XXTFakePackageV13 new]]; }
-- (BOOL)hasPurchasedPackageWithIdentifier:(id)ident { return YES; }
 @end
 
 // ─────────────────────────────────────────
 // MARK: - Main Apply
 // ─────────────────────────────────────────
 
-static void applyV13Bypass(void) {
-    // 1. UI Suppression
-    swizzle([UIViewController class], @selector(presentViewController:animated:completion:), @selector(bp_v13_presentViewController:animated:completion:));
-    swizzle([UILabel class], @selector(setText:), @selector(bp_v13_setText:));
+static void applyV14Bypass(void) {
+    // UI Suppression
+    swizzle([UIViewController class], @selector(presentViewController:animated:completion:), @selector(bp_v14_presentViewController:animated:completion:));
+    swizzle([UILabel class], @selector(setText:), @selector(bp_v14_setText:));
 
-    // 2. HVCHavocAccount & HVCKeychainHelper
-    id HA = NSClassFromString(@"HVCHavocAccount");
-    if (HA) {
-        id fake = [XXTFakeAccountV13 new];
-        class_replaceMethod(object_getClass(HA), @selector(currentAccount), imp_implementationWithBlock(^id(id self){ return fake; }), "@@:");
-        class_replaceMethod(HA, @selector(purchasedPackages), imp_implementationWithBlock(^id(id self){ return @[[XXTFakePackageV13 new]]; }), "@@:");
-        class_replaceMethod(HA, @selector(hasPurchasedPackageWithIdentifier:), imp_implementationWithBlock(^BOOL(id self, id i){ return YES; }), "B@:@");
-    }
+    // Network Intercept
+    swizzle([NSURLSession class], @selector(dataTaskWithRequest:completionHandler:), @selector(bp_v14_dataTaskWithRequest:completionHandler:));
 
-    Class KC = NSClassFromString(@"HVCKeychainHelper");
-    if (KC) {
-        class_replaceMethod(KC, @selector(token), imp_implementationWithBlock(^id(id self){ return kBYPASS_TOKEN; }), "@@:");
-        class_replaceMethod(KC, @selector(secret), imp_implementationWithBlock(^id(id self){ return kBYPASS_SECRET; }), "@@:");
-    }
-
-    // 3. ASWebAuth / SFAuth
+    // ASWebAuth Bypass
     dlopen("/System/Library/Frameworks/AuthenticationServices.framework/AuthenticationServices", RTLD_NOW);
-    for (NSString *name in @[@"ASWebAuthenticationSession", @"SFAuthenticationSession"]) {
-        Class cls = NSClassFromString(name);
-        if (cls) {
-            class_replaceMethod(cls, @selector(initWithURL:callbackURLScheme:completionHandler:), imp_implementationWithBlock(^id(id self, NSURL* u, id s, id cb){
-                 objc_setAssociatedObject(self, kCompletionBlockKeyV13, cb, OBJC_ASSOCIATION_COPY_NONATOMIC);
-                 return self;
-            }), "@@:@@@");
-            class_replaceMethod(cls, @selector(start), imp_implementationWithBlock(^BOOL(id self){
-                 void (^completion)(NSURL *, NSError *) = objc_getAssociatedObject(self, kCompletionBlockKeyV13);
-                 if (completion) dispatch_async(dispatch_get_main_queue(), ^{ completion([NSURL URLWithString:kSUCCESS_URL], nil); });
-                 return YES;
-            }), "B@:");
-        }
+    Class AS = NSClassFromString(@"ASWebAuthenticationSession");
+    if (AS) {
+        class_replaceMethod(AS, @selector(initWithURL:callbackURLScheme:completionHandler:), imp_implementationWithBlock(^id(id self, NSURL* u, id s, id cb){
+             objc_setAssociatedObject(self, kCompletionBlockKeyV14, cb, OBJC_ASSOCIATION_COPY_NONATOMIC);
+             return self;
+        }), "@@:@@@");
+        class_replaceMethod(AS, @selector(start), imp_implementationWithBlock(^BOOL(id self){
+             void (^completion)(NSURL *, NSError *) = objc_getAssociatedObject(self, kCompletionBlockKeyV14);
+             if (completion) dispatch_async(dispatch_get_main_queue(), ^{ completion([NSURL URLWithString:kSUCCESS_URL], nil); });
+             return YES;
+        }), "B@:");
+    }
+
+    // Account & Keychain
+    Class HA = NSClassFromString(@"HVCHavocAccount");
+    if (HA) {
+        class_replaceMethod(object_getClass(HA), @selector(currentAccount), imp_implementationWithBlock(^id(id self){ return [self new]; }), "@@:"); // Return self as fake or similar
+        class_replaceMethod(HA, @selector(isValid), (IMP)imp_implementationWithBlock(^BOOL(id self){ return YES; }), "B@:");
+        class_replaceMethod(HA, @selector(isRegistered), (IMP)imp_implementationWithBlock(^BOOL(id self){ return YES; }), "B@:");
+        class_replaceMethod(HA, @selector(purchasedPackages), (IMP)imp_implementationWithBlock(^NSArray*(id self){ 
+            return @[@{@"identifier": @"ch.xxtou.xxtouch.elitets", @"name": @"XXTouch Elite TS"}]; 
+        }), "@@:");
     }
 }
 
 __attribute__((constructor))
 static void dylib_init(void) {
     @autoreleasepool {
-        applyV13Bypass();
+        applyV14Bypass();
     }
 }
