@@ -91,9 +91,9 @@ jobs:
         run: |
           # Biên dịch trực tiếp insert_dylib từ source C bằng clang siêu tốc để tránh treo
           git clone --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/insert_dylib
-          cd /tmp/insert_dylib
-          clang insert_dylib/main.c -o insert_dylib
-          sudo mv insert_dylib /usr/local/bin/
+          cd /tmp/insert_dylib/insert_dylib
+          clang main.c -O3 -o insert_dylib_bin
+          sudo mv insert_dylib_bin /usr/local/bin/insert_dylib
           
           # Giải nén TIPA đã được Azule patch
           mkdir -p /tmp/deep_patch
