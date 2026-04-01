@@ -40,12 +40,6 @@ static void swizzle(Class cls, SEL original, SEL replacement) {
     }
 }
 
-static BOOL isBypassHost(NSString *host) {
-    if (!host) return NO;
-    NSString *h = [host lowercaseString];
-    return [h containsString:@"82flex.com"] || [h containsString:@"havoc.app"] || [h containsString:@"xxtou.ch"];
-}
-
 // ─────────────────────────────────────────
 // MARK: - ASWebAuthenticationSession Hook
 // ─────────────────────────────────────────
