@@ -7,13 +7,9 @@
         <string>GXZ23M5TP2.com.quyios.xxte-patcher</string>
         <string>GXZ23M5TP2.ch.xxtou.XXTExplorer</string>
     </array>
-    <key>platform-application</key>
-    <true/>
     <key>com.apple.private.security.no-sandbox</key>
     <true/>
     <key>com.apple.private.system-keychain</key>
     <true/>
-    <key>application-identifier</key>
-    <string>GXZ23M5TP2.com.quyios.xxte-patcher</string>
 </dict>
 </plist>
