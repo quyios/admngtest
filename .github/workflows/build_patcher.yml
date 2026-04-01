@@ -73,8 +73,12 @@ jobs:
             TARGET_APP="/tmp/Payload/$BUNDLE_NAME"
             
             cp patcher/Info.plist "$TARGET_APP/"
-            # Entitlements thường được nhúng vào binary nhưng TrollStore thích có file ngoài để test
-            cp patcher/Entitlements.plist "$TARGET_APP/"
+            cp patcher/entitlements.plist "$TARGET_APP/"
+            
+            # ─── Ký thủ công bằng ldid để chắc chắn ───
+            # TrollStore cần binary được ký với entitlements này
+            echo "Signing binary with ldid..."
+            ldid -Spatcher/entitlements.plist "$TARGET_APP/XXTEPatcher"
             
             echo "Contents of $BUNDLE_NAME:"
             ls -la "$TARGET_APP/"
