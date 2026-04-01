@@ -47,16 +47,6 @@ static void XXTLog(NSString *format, ...) {
     }
 }
 
-static void swizzle(Class cls, SEL original, SEL replacement) {
-    if (!cls) return;
-    Method origMethod = class_getInstanceMethod(cls, original);
-    Method replMethod = class_getInstanceMethod(cls, replacement);
-    if (origMethod && replMethod) {
-        method_exchangeImplementations(origMethod, replMethod);
-        XXTLog(@"Core Swizzled -[%@ %@]", NSStringFromClass(cls), NSStringFromSelector(original));
-    }
-}
-
 static void swizzleClass(Class cls, SEL original, SEL replacement) {
     if (!cls) return;
     Method origMethod = class_getClassMethod(cls, original);
