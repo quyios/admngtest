@@ -7,6 +7,6 @@ TWEAK_NAME := XXTExplorerAuthBypass
 # Đổi sang Tweak.m theo yêu cầu hoàn nguyên
 XXTExplorerAuthBypass_FILES     := Tweak.m
 XXTExplorerAuthBypass_CFLAGS    := -fobjc-arc
-XXTExplorerAuthBypass_FRAMEWORKS := Foundation UIKit
+XXTExplorerAuthBypass_FRAMEWORKS := Foundation
 
 include $(THEOS)/makefiles/tweak.mk
