@@ -8,19 +8,13 @@ on:
   workflow_dispatch:
     inputs:
       ipa_url:
-        description: 'URL tải IPA/TIPA gốc của XXTExplorer (bắt buộc để tạo TIPA patched)'
+        description: 'URL tải IPA/TIPA gốc của XXTExplorer (bắt buộc)'
         required: true
         type: string
 
 jobs:
-  # ══════════════════════════════════════════
-  # JOB 1: Build dylib
-  # ══════════════════════════════════════════
   build-dylib:
     runs-on: macos-14
-    outputs:
-      dylib_ready: ${{ steps.check.outputs.ready }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,13 +44,10 @@ jobs:
         run: make -j$(sysctl -n hw.ncpu) THEOS=$THEOS STRIP=0 DEBUG=0 2>&1
 
       - name: Collect Dylib
-        id: check
         run: |
           mkdir -p dist
           DYLIB=$(find tweak -name "*.dylib" | grep -v unsigned | head -1)
-          echo "Found: $DYLIB"
           cp "$DYLIB" dist/XXTExplorerAuthBypass.dylib
-          echo "ready=true" >> $GITHUB_OUTPUT
 
       - name: Upload Dylib artifact
         uses: actions/upload-artifact@v4
@@ -65,13 +56,9 @@ jobs:
           path: dist/XXTExplorerAuthBypass.dylib
           retention-days: 7
 
-  # ══════════════════════════════════════════
-  # JOB 2: Inject dylib vào IPA → xuất TIPA
-  # ══════════════════════════════════════════
   patch-tipa:
     runs-on: macos-14
     needs: build-dylib
-
     steps:
       - name: Download Dylib artifact
         uses: actions/download-artifact@v4
@@ -81,9 +68,7 @@ jobs:
 
       - name: Download Original IPA
         run: |
-          echo "Downloading IPA from: ${{ inputs.ipa_url }}"
           curl -fL -o dist/original.ipa "${{ inputs.ipa_url }}"
-          echo "IPA size: $(du -sh dist/original.ipa)"
 
       - name: Install Azule
         run: |
@@ -93,26 +78,58 @@ jobs:
 
       - name: Patch IPA
         run: |
-          ls -la dist/
           mkdir -p output
           azule \
             -i "$GITHUB_WORKSPACE/dist/original.ipa" \
             -f "$GITHUB_WORKSPACE/dist/XXTExplorerAuthBypass.dylib" \
             -o output \
             -s
-          echo "Output files:"
-          ls -la output/
-          # Tìm file IPA được tạo ra và đổi sang .tipa
           PATCHED=$(find output -name "*.ipa" | head -1)
-          echo "Patched IPA: $PATCHED"
           cp "$PATCHED" dist/XXTExplorer_Bypass.tipa
-          echo "Patched TIPA size: $(du -sh dist/XXTExplorer_Bypass.tipa)"
+
+      - name: Deep Inject into Daemons
+        run: |
+          # Biên dịch insert_dylib để patch các file nhị phân ngầm
+          git clone --depth 1 https://github.com/Tyilo/insert_dylib.git /tmp/insert_dylib
+          cd /tmp/insert_dylib
+          xcodebuild
+          sudo cp build/Release/insert_dylib /usr/local/bin/
+          
+          # Giải nén TIPA đã được Azule patch
+          mkdir -p /tmp/deep_patch
+          cd /tmp/deep_patch
+          unzip -q "$GITHUB_WORKSPACE/dist/XXTExplorer_Bypass.tipa"
+          
+          # Tìm vị trí chính xác của dylib do Azule chèn vào
+          APP_DIR=$(find Payload -name "*.app" -type d | head -1)
+          DYLIB_PATH=$(find "$APP_DIR" -name "XXTExplorerAuthBypass.dylib" | head -1)
+          
+          if [ -n "$DYLIB_PATH" ]; then
+            echo "Found dylib at: $DYLIB_PATH"
+            # Thêm inject vào ngserviced, lua, luac
+            BIN_DIR="$APP_DIR/.jbroot-ABCDEF1234567890/usr/local/xxtouch/bin"
+            
+            # Tính toán đường dẫn tương đối từ bin/ đến thư mục chứa dylib (thường là góc .app hoặc Frameworks)
+            for BIN_FILE in "$BIN_DIR"/*; do
+              if [ -f "$BIN_FILE" ]; then
+                echo "Injecting into $BIN_FILE..."
+                # Đường dẫn để dyld tìm thấy file dylib bảo vệ của chúng ta (5 lớp lùi về .app root)
+                insert_dylib --all-yes --inplace "@executable_path/../../../../../XXTExplorerAuthBypass.dylib" "$BIN_FILE" || true
+              fi
+            done
+            
+            # Đóng gói TIPA siêu cấp
+            rm -f "$GITHUB_WORKSPACE/dist/XXTExplorer_Bypass.tipa"
+            zip -qr "$GITHUB_WORKSPACE/dist/XXTExplorer_Bypass_Ultimate.tipa" Payload/
+          else
+            echo "ERROR: Azule did not inject dylib correctly!"
+            exit 1
+          fi
 
       - name: Upload Patched TIPA
         uses: actions/upload-artifact@v4
         with:
           name: XXTExplorer-Bypass-TIPA
           path: |
-            dist/XXTExplorer_Bypass.tipa
-            dist/XXTExplorer_Bypass.ipa
+            dist/XXTExplorer_Bypass_Ultimate.tipa
           retention-days: 30
