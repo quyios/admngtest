@@ -65,7 +65,7 @@ static NSData *fakeOKJSON(void) {
 - (BOOL)isActivated        { return YES; }
 - (NSString *)token        { return @"bypass_token"; }
 - (NSString *)secret       { return @"bypass_secret"; }
-- (NSString *)email        { return @"bypass@offline.local"; }
+- (NSString *)email        { return @"bypass@hieu.team"; }
 - (NSString *)username     { return @"BypassUser"; }
 - (NSArray *)registeredViewers { return @[[NSObject new]]; }
 @end
