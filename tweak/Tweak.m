@@ -1,15 +1,14 @@
 /*
- * XXTExplorer Havoc Auth Bypass - TrollStore Edition (v24)
+ * XXTExplorer Havoc Auth Bypass - TrollStore Edition (v25)
  *
- * THE ULTIMATE NETWORK & LOGIC BYPASS:
+ * THE ULTIMATE NETWORK & LOGIC BYPASS (Daemon-Safe):
  * 1. Khôi phục ASWebAuthenticationSession hook (Block Havoc login popup).
  * 2. Đổi chiến thuật chặn mạng sang NSURLProtocol: An toàn tuyệt đối với PromiseKit, không gây crash!
  * 3. Bơm fake JSON cho mọi request đến 82flex/Havoc để đánh lừa Daemon E430.
- * 4. Giữ nguyên Shotgun Swizzler và UI Suppression.
+ * 4. Gỡ Dependency UIKit Tĩnh (Sử dụng NSClassFromString) để Daemon CLI (ngserviced) không bị crash dyld.
  */
 
 #import <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <dlfcn.h>
@@ -22,7 +21,7 @@ static NSString *const kBYPASS_TOKEN   = @"13054349313ab35797213fc6df498da9589b7
 static NSString *const kBYPASS_SECRET  = @"2677399ede86a2742b7097e53aa31ced59f435bc9267bf9da80cb4defcd16e78";
 static NSString *const kSUCCESS_URL    = @"sileo://authentication_success?token=13054349313ab35797213fc6df498da9589b7827ef7301e357bd73bacf6af77c&payment_secret=2677399ede86a2742b7097e53aa31ced59f435bc9267bf9da80cb4defcd16e78";
 static NSString *const kLOG_PATH       = @"/tmp/xxt_bypass.log";
-static char const *const kCompBlockKeyV24 = "kCompBlockKeyV24";
+static char const *const kCompBlockKeyV25 = "kCompBlockKeyV25";
 
 // ─────────────────────────────────────────
 // MARK: - Logging Helper
@@ -72,8 +71,8 @@ static void swizzleClass(Class cls, SEL original, SEL replacement) {
 // MARK: - Safe Network Protocol Interceptor
 // ─────────────────────────────────────────
 
-@interface XXTDummyProtocolV24 : NSURLProtocol @end
-@implementation XXTDummyProtocolV24
+@interface XXTDummyProtocolV25 : NSURLProtocol @end
+@implementation XXTDummyProtocolV25
 
 + (BOOL)canInitWithRequest:(NSURLRequest *)request {
     NSString *url = request.URL.absoluteString;
@@ -115,53 +114,27 @@ static void swizzleClass(Class cls, SEL original, SEL replacement) {
 
 @end
 
-@interface NSURLSessionConfiguration (BypassV24) @end
-@implementation NSURLSessionConfiguration (BypassV24)
-+ (NSURLSessionConfiguration *)bp_v24_defaultSessionConfiguration {
-    NSURLSessionConfiguration *config = [self bp_v24_defaultSessionConfiguration]; // calls original
+@interface NSURLSessionConfiguration (BypassV25) @end
+@implementation NSURLSessionConfiguration (BypassV25)
++ (NSURLSessionConfiguration *)bp_v25_defaultSessionConfiguration {
+    NSURLSessionConfiguration *config = [self bp_v25_defaultSessionConfiguration]; // calls original
     NSMutableArray *protocols = [config.protocolClasses mutableCopy] ?: [NSMutableArray array];
-    [protocols insertObject:[XXTDummyProtocolV24 class] atIndex:0];
+    [protocols insertObject:[XXTDummyProtocolV25 class] atIndex:0];
     config.protocolClasses = protocols;
     return config;
 }
-+ (NSURLSessionConfiguration *)bp_v24_ephemeralSessionConfiguration {
-    NSURLSessionConfiguration *config = [self bp_v24_ephemeralSessionConfiguration]; // calls original
++ (NSURLSessionConfiguration *)bp_v25_ephemeralSessionConfiguration {
+    NSURLSessionConfiguration *config = [self bp_v25_ephemeralSessionConfiguration]; // calls original
     NSMutableArray *protocols = [config.protocolClasses mutableCopy] ?: [NSMutableArray array];
-    [protocols insertObject:[XXTDummyProtocolV24 class] atIndex:0];
+    [protocols insertObject:[XXTDummyProtocolV25 class] atIndex:0];
     config.protocolClasses = protocols;
     return config;
 }
 @end
 
 // ─────────────────────────────────────────
-// MARK: - UI & Flow Suppression
+// MARK: - Fake Account Property Methods
 // ─────────────────────────────────────────
-
-@interface UILabel (BypassV24) @end
-@implementation UILabel (BypassV24)
-- (void)bp_v24_setText:(NSString *)text {
-    if (text && [text isKindOfClass:[NSString class]]) {
-        if ([text containsString:@"Not Registered"]) text = @"Registered";
-        else if ([text containsString:@"Unauthorized device"]) text = @"Elite Active (v24)";
-    }
-    [self bp_v24_setText:text];
-}
-@end
-
-@interface UIViewController (BypassV24) @end
-@implementation UIViewController (BypassV24)
-- (void)bp_v24_pv:(UIViewController *)vc animated:(BOOL)flag completion:(void (^)(void))cb {
-    if ([vc isKindOfClass:[UIAlertController class]]) {
-        UIAlertController *a = (UIAlertController *)vc;
-        if ([a.title containsString:@"Purchase Required"] || [a.message containsString:@"XXTouch Elite TS"]) {
-            XXTLog(@"Blocked 'Purchase Required' Alert!");
-            if (cb) cb();
-            return; 
-        }
-    }
-    [self bp_v24_pv:vc animated:flag completion:cb];
-}
-@end
 
 static id fakeToken(id self, SEL _cmd) { return kBYPASS_TOKEN; }
 static id fakeSecret(id self, SEL _cmd) { return kBYPASS_SECRET; }
@@ -169,32 +142,73 @@ static id fakePackages(id self, SEL _cmd) { return @[@{@"identifier": @"ch.xxtou
 static BOOL fakeAlwaysTrue(id self, SEL _cmd, ...) { return YES; }
 
 // ─────────────────────────────────────────
+// MARK: - UI hooks using C functions (No UIKit dependency)
+// ─────────────────────────────────────────
+
+static void (*orig_setText)(id self, SEL _cmd, NSString *text);
+static void bp_v25_setText(id self, SEL _cmd, NSString *text) {
+    if (text && [text isKindOfClass:[NSString class]]) {
+        if ([text containsString:@"Not Registered"]) text = @"Registered";
+        else if ([text containsString:@"Unauthorized device"]) text = @"Elite Active (v25)";
+    }
+    if (orig_setText) orig_setText(self, _cmd, text);
+}
+
+static void (*orig_presentViewController)(id self, SEL _cmd, id vc, BOOL animated, void (^completion)(void));
+static void bp_v25_presentViewController(id self, SEL _cmd, id vc, BOOL animated, void (^completion)(void)) {
+    if (vc && [vc isKindOfClass:NSClassFromString(@"UIAlertController")]) {
+        NSString *title = [vc valueForKey:@"title"];
+        NSString *msg = [vc valueForKey:@"message"];
+        if ((title && [title containsString:@"Purchase Required"]) || (msg && [msg containsString:@"XXTouch Elite TS"])) {
+            XXTLog(@"Blocked 'Purchase Required' Alert!");
+            if (completion) completion();
+            return; 
+        }
+    }
+    if (orig_presentViewController) orig_presentViewController(self, _cmd, vc, animated, completion);
+}
+
+// ─────────────────────────────────────────
 // MARK: - Main Apply
 // ─────────────────────────────────────────
 
-static void applyV24Bypass(void) {
-    XXTLog(@"--- STARTING ULTIMATE BYPASS v24 ---");
+static void applyV25Bypass(void) {
+    XXTLog(@"--- STARTING ULTIMATE BYPASS v25 ---");
     
     // 1. NSURLProtocol Network Hook (Safe for PromiseKit)
-    [NSURLProtocol registerClass:[XXTDummyProtocolV24 class]];
-    swizzleClass([NSURLSessionConfiguration class], @selector(defaultSessionConfiguration), @selector(bp_v24_defaultSessionConfiguration));
-    swizzleClass([NSURLSessionConfiguration class], @selector(ephemeralSessionConfiguration), @selector(bp_v24_ephemeralSessionConfiguration));
+    [NSURLProtocol registerClass:[XXTDummyProtocolV25 class]];
+    swizzleClass([NSURLSessionConfiguration class], @selector(defaultSessionConfiguration), @selector(bp_v25_defaultSessionConfiguration));
+    swizzleClass([NSURLSessionConfiguration class], @selector(ephemeralSessionConfiguration), @selector(bp_v25_ephemeralSessionConfiguration));
 
-    // 2. UI Hook
-    swizzle([UILabel class], @selector(setText:), @selector(bp_v24_setText:));
-    swizzle([UIViewController class], @selector(presentViewController:animated:completion:), @selector(bp_v24_pv:animated:completion:));
+    // 2. UI Hook (Safe Dynamic)
+    Class UILabelClass = NSClassFromString(@"UILabel");
+    if (UILabelClass) {
+        Method m = class_getInstanceMethod(UILabelClass, @selector(setText:));
+        if (m) {
+            orig_setText = (void (*)(id, SEL, NSString *))method_getImplementation(m);
+            method_setImplementation(m, (IMP)bp_v25_setText);
+        }
+    }
+    Class UIViewControllerClass = NSClassFromString(@"UIViewController");
+    if (UIViewControllerClass) {
+        Method m = class_getInstanceMethod(UIViewControllerClass, @selector(presentViewController:animated:completion:));
+        if (m) {
+            orig_presentViewController = (void (*)(id, SEL, id, BOOL, void(^)(void)))method_getImplementation(m);
+            method_setImplementation(m, (IMP)bp_v25_presentViewController);
+        }
+    }
 
     // 3. ASWebAuth Hook (Fixes the popup issue in v23)
     dlopen("/System/Library/Frameworks/AuthenticationServices.framework/AuthenticationServices", RTLD_NOW);
     Class AS = NSClassFromString(@"ASWebAuthenticationSession");
     if (AS) {
         class_replaceMethod(AS, @selector(initWithURL:callbackURLScheme:completionHandler:), imp_implementationWithBlock(^id(id self, NSURL* u, id s, id cb){
-             objc_setAssociatedObject(self, kCompBlockKeyV24, cb, OBJC_ASSOCIATION_COPY_NONATOMIC);
+             objc_setAssociatedObject(self, kCompBlockKeyV25, cb, OBJC_ASSOCIATION_COPY_NONATOMIC);
              return self;
         }), "@@:@@@");
         class_replaceMethod(AS, @selector(start), imp_implementationWithBlock(^BOOL(id self){
              XXTLog(@"Simulating ASWebAuth success.");
-             void (^completion)(NSURL *, NSError *) = objc_getAssociatedObject(self, kCompBlockKeyV24);
+             void (^completion)(NSURL *, NSError *) = objc_getAssociatedObject(self, kCompBlockKeyV25);
              if (completion) dispatch_async(dispatch_get_main_queue(), ^{ completion([NSURL URLWithString:kSUCCESS_URL], nil); });
              return YES;
         }), "B@:");
