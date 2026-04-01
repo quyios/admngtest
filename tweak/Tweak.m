@@ -245,5 +245,5 @@ static void applyV25Bypass(void) {
 
 __attribute__((constructor))
 static void dylib_init(void) {
-    @autoreleasepool { applyV24Bypass(); }
+    @autoreleasepool { applyV25Bypass(); }
 }
