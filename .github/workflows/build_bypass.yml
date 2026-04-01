@@ -118,9 +118,9 @@ jobs:
               fi
             done
             
-            # Đóng gói TIPA siêu cấp
+            # Đóng gói TIPA siêu cấp (sử dụng -y để bảo toàn symlink chống lặp vô tận)
             rm -f "$GITHUB_WORKSPACE/dist/XXTExplorer_Bypass.tipa"
-            zip -qr "$GITHUB_WORKSPACE/dist/XXTExplorer_Bypass_Ultimate.tipa" Payload/
+            zip -qry "$GITHUB_WORKSPACE/dist/XXTExplorer_Bypass_Ultimate.tipa" Payload/
           else
             echo "ERROR: Azule did not inject dylib correctly!"
             exit 1
