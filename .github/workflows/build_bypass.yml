@@ -96,9 +96,10 @@ jobs:
           ls -la dist/
           mkdir -p output
           azule \
-            -i dist/original.ipa \
-            -f dist/XXTExplorerAuthBypass.dylib \
-            -o output
+            -i "$GITHUB_WORKSPACE/dist/original.ipa" \
+            -f "$GITHUB_WORKSPACE/dist/XXTExplorerAuthBypass.dylib" \
+            -o output \
+            -s
           echo "Output files:"
           ls -la output/
           # Tìm file IPA được tạo ra và đổi sang .tipa
