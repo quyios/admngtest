@@ -1,10 +1,11 @@
 /*
- * XXTExplorer Havoc Auth Bypass - TrollStore Edition (v8)
+ * XXTExplorer Havoc Auth Bypass - TrollStore Edition (v9)
  *
- * BRUTE FORCE BYPASS:
- * 1. Duyệt toàn bộ Class trong app, hook bất kỳ hàm nào tên là isRegistered/isAuthorized...
- * 2. Hook UILabel setText để ép hiển thị chữ "Registered".
- * 3. Ép Token thật của bạn vào mọi nơi.
+ * SAFE UI BYPASS - Sửa lỗi crash v8. 
+ * Điều chỉnh: 
+ *   - Hook UILabel an toàn hơn.
+ *   - Giới hạn Brute Force chỉ trên các class XXTE và HVC.
+ *   - Đảm bảo token thật luôn được trả về.
  */
 
 #import <Foundation/Foundation.h>
@@ -14,14 +15,14 @@
 #import <dlfcn.h>
 
 // ─────────────────────────────────────────
-// MARK: - Constants & Tokens
+// MARK: - Constants
 // ─────────────────────────────────────────
 
 static NSString *const kBYPASS_TOKEN  = @"e3691a72c623d050e5506c8128e0fc3e37e6e2836dc40bc5ee7eb568edaba7a6";
 static NSString *const kBYPASS_SECRET = @"f66651c3893125261d07168d702d5c136afb82a2bf0bfeb99090dc42f3a00b6d";
 static NSString *const kSUCCESS_URL   = @"sileo://authentication_success?token=e3691a72c623d050e5506c8128e0fc3e37e6e2836dc40bc5ee7eb568edaba7a6&payment_secret=f66651c3893125261d07168d702d5c136afb82a2bf0bfeb99090dc42f3a00b6d";
 
-static char const *const kCompletionBlockKey = "kCompletionBlockKeyV8";
+static char const *const kCompletionBlockKeyV9 = "kCompletionBlockKeyV9";
 
 // ─────────────────────────────────────────
 // MARK: - Safe Swizzle
@@ -37,94 +38,85 @@ static void swizzle(Class cls, SEL original, SEL replacement) {
 }
 
 // ─────────────────────────────────────────
-// MARK: - Brute Force Helper
+// MARK: - Fake Account (Safe Implementation)
 // ─────────────────────────────────────────
 
-static BOOL shouldForceTrue(NSString *selName) {
-    NSArray *targets = @[@"isAuthorized", @"isRegistered", @"isAuthenticated", @"isActivated", @"isValid", @"isVerified", @"accountExists"];
-    for (NSString *t in targets) {
-        if ([selName isEqualToString:t]) return YES;
-    }
-    return NO;
-}
-
-static BOOL forced_BOOL(id self, SEL _cmd) { return YES; }
-static id forced_ID(id self, SEL _cmd) { return @[[NSObject new]]; }
-
-// ─────────────────────────────────────────
-// MARK: - UI Hooks
-// ─────────────────────────────────────────
-
-@interface UILabel (BypassV8) @end
-@implementation UILabel (BypassV8)
-- (void)bp_v8_setText:(NSString *)text {
-    if ([text containsString:@"Not Registered"]) {
-        [self bp_v8_setText:@"Registered"];
-        return;
-    }
-    if ([text containsString:@"Unauthorized device"]) {
-        [self bp_v8_setText:@""]; // Xoá dòng cảnh báo
-        return;
-    }
-    [self bp_v8_setText:text];
-}
+@interface XXTFakeAccountV9 : NSObject @end
+@implementation XXTFakeAccountV9
+- (BOOL)isValid         { return YES; }
+- (BOOL)isAuthenticated { return YES; }
+- (BOOL)isRegistered    { return YES; }
+- (BOOL)isAuthorized    { return YES; }
+- (NSString *)token     { return kBYPASS_TOKEN; }
+- (NSString *)secret    { return kBYPASS_SECRET; }
+- (NSString *)email     { return @"bypass@offline.local"; }
+- (NSArray *)registeredViewers { return @[[NSObject new]]; }
 @end
 
 // ─────────────────────────────────────────
-// MARK: - System Hooks
+// MARK: - Hook Class Implementations
 // ─────────────────────────────────────────
 
-@interface XXTBypassHooksV8 : NSObject @end
-@implementation XXTBypassHooksV8
+@interface XXTUIHooksV9 : NSObject @end
+@implementation XXTUIHooksV9
 
-// Account Singleton
-+ (id)bp_shared { return self; }
-- (BOOL)isTrue    { return YES; }
-- (id)bp_token    { return kBYPASS_TOKEN; }
-- (id)bp_secret   { return kBYPASS_SECRET; }
-- (id)bp_email    { return @"bypass@offline.local"; }
-- (id)bp_username { return @"BypassUser"; }
-- (id)bp_viewers  { return @[[NSObject new]]; }
+// UILabel setText Hook
+- (void)bp_v9_setText:(NSString *)text {
+    if (text && [text isKindOfClass:[NSString class]]) {
+        if ([text containsString:@"Not Registered"]) {
+            [self bp_v9_setText:@"Registered"];
+            return;
+        }
+        if ([text containsString:@"Unauthorized device"]) {
+            [self bp_v9_setText:@""]; // Hide notice
+            return;
+        }
+    }
+    [self bp_v9_setText:text];
+}
 
 // ASWebAuth Capture
-- (id)bp_initWithURL:(NSURL *)url callbackURLScheme:(id)s completionHandler:(void(^)(id,id))cb {
-    id instance = [self bp_initWithURL:url callbackURLScheme:s completionHandler:cb];
+- (id)bp_v9_initWithURL:(NSURL *)url callbackURLScheme:(id)s completionHandler:(id)cb {
+    id instance = [self bp_v9_initWithURL:url callbackURLScheme:s completionHandler:cb];
     if (instance && cb) {
-        objc_setAssociatedObject(instance, kCompletionBlockKey, cb, OBJC_ASSOCIATION_COPY_NONATOMIC);
+        objc_setAssociatedObject(instance, kCompletionBlockKeyV9, cb, OBJC_ASSOCIATION_COPY_NONATOMIC);
     }
     return instance;
 }
 
-- (BOOL)bp_start {
-    void (^completion)(NSURL *, NSError *) = objc_getAssociatedObject(self, kCompletionBlockKey);
+- (BOOL)bp_v9_start {
+    void (^completion)(NSURL *, NSError *) = objc_getAssociatedObject(self, kCompletionBlockKeyV9);
     if (completion) {
         dispatch_async(dispatch_get_main_queue(), ^{
             completion([NSURL URLWithString:kSUCCESS_URL], nil);
         });
         return YES;
     }
-    return [self bp_start];
+    return [self bp_v9_start];
 }
 
 @end
 
 // ─────────────────────────────────────────
-// MARK: - Main Apply
+// MARK: - Brute Force Functions
 // ─────────────────────────────────────────
 
-static void applyV8Bypass(void) {
-    // 1. Hook UILabel để sửa UI trực quan
-    swizzle([UILabel class], @selector(setText:), @selector(bp_v8_setText:));
+static BOOL forced_BOOL_YES(id self, SEL _cmd) { return YES; }
 
-    // 2. Hook ASWebAuthenticationSession
+static void applyV9Bypass(void) {
+    // 1. Hook UILabel
+    swizzle([UILabel class], @selector(setText:), @selector(bp_v9_setText:));
+
+    // 2. Hook ASWebAuth
     dlopen("/System/Library/Frameworks/AuthenticationServices.framework/AuthenticationServices", RTLD_NOW);
     Class AS = NSClassFromString(@"ASWebAuthenticationSession");
     if (AS) {
-        swizzle(AS, @selector(initWithURL:callbackURLScheme:completionHandler:), @selector(bp_initWithURL:callbackURLScheme:completionHandler:));
-        swizzle(AS, @selector(start), @selector(bp_start));
+        swizzle(AS, @selector(initWithURL:callbackURLScheme:completionHandler:), @selector(bp_v9_initWithURL:callbackURLScheme:completionHandler:));
+        swizzle(AS, @selector(start), @selector(bp_v9_start));
     }
 
-    // 3. Brute Force Hook - Tìm và diệt các hàm check license
+    // 3. Selective Brute Force
+    NSArray *boolMethods = @[@"isAuthorized", @"isRegistered", @"isAuthenticated", @"isValid", @"isActivated", @"accountExists"];
     int numClasses = objc_getClassList(NULL, 0);
     if (numClasses > 0) {
         Class *classes = (Class *)malloc(sizeof(Class) * numClasses);
@@ -132,38 +124,42 @@ static void applyV8Bypass(void) {
         for (int i = 0; i < numClasses; i++) {
             Class cls = classes[i];
             NSString *clsName = NSStringFromClass(cls);
-            
-            // Chỉ hook các class của app hoặc Havoc
             if ([clsName hasPrefix:@"XXTE"] || [clsName hasPrefix:@"HVC"]) {
-                // Hook các hàm BOOL trả về YES
-                unsigned int mc = 0;
-                Method *mlist = class_copyMethodList(cls, &mc);
-                for (unsigned int m = 0; m < mc; m++) {
-                    SEL sel = method_getName(mlist[m]);
-                    NSString *selName = NSStringFromSelector(sel);
-                    if (shouldForceTrue(selName)) {
-                        class_replaceMethod(cls, sel, (IMP)forced_BOOL, "B@:");
+                for (NSString *selStr in boolMethods) {
+                    SEL sel = NSSelectorFromString(selStr);
+                    Method m = class_getInstanceMethod(cls, sel);
+                    if (m) {
+                        // Chỉ thay đổi nếu signature là BOOL, NO params (B@:)
+                        const char *type = method_getTypeEncoding(m);
+                        if (type && strcmp(type, "B@:") == 0) {
+                            class_replaceMethod(cls, sel, (IMP)forced_BOOL_YES, type);
+                        }
                     }
                 }
-                free(mlist);
                 
-                // Hook các hàm singleton cơ bản (sharedInstance, currentAccount...)
-                if (class_getClassMethod(cls, @selector(currentAccount))) {
-                    class_replaceMethod(object_getClass(cls), @selector(currentAccount), (IMP)forced_ID, "@@:");
-                }
-                if (class_getClassMethod(cls, @selector(sharedInstance))) {
-                     class_replaceMethod(object_getClass(cls), @selector(sharedInstance), (IMP)forced_ID, "@@:");
+                // Singleton hooks
+                SEL selCur = @selector(currentAccount);
+                if (class_getClassMethod(cls, selCur)) {
+                    class_replaceMethod(object_getClass(cls), selCur, (IMP)forced_BOOL_YES, "@@:"); // Return self as fake or similar
                 }
             }
         }
         free(classes);
     }
     
-    // 4. Hook Token cụ thể cho HVCKeychainHelper
+    // 4. Specific Token Fix
     Class KC = NSClassFromString(@"HVCKeychainHelper");
     if (KC) {
-        swizzle(KC, @selector(token), @selector(bp_token));
-        swizzle(KC, @selector(secret), @selector(bp_secret));
+        // Trình duyệt text để trả về token thật
+        class_replaceMethod(KC, @selector(token), imp_implementationWithBlock(^NSString*(id self){ return kBYPASS_TOKEN; }), "@@:");
+        class_replaceMethod(KC, @selector(secret), imp_implementationWithBlock(^NSString*(id self){ return kBYPASS_SECRET; }), "@@:");
+        class_replaceMethod(object_getClass(KC), @selector(accountExists), (IMP)forced_BOOL_YES, "B@:");
+    }
+    
+    Class HA = NSClassFromString(@"HVCHavocAccount");
+    if (HA) {
+        class_replaceMethod(object_getClass(HA), @selector(currentAccount), imp_implementationWithBlock(^id(id self){ return [XXTFakeAccountV9 new]; }), "@@:");
+        class_replaceMethod(object_getClass(HA), @selector(account), imp_implementationWithBlock(^id(id self){ return [XXTFakeAccountV9 new]; }), "@@:");
     }
 }
 
@@ -175,9 +171,6 @@ static void dylib_init(void) {
         [d setObject:@"BYPASS-LICENSE-OFFLINE" forKey:@"kXXTEMoreLicenseCachedLicense"];
         [d synchronize];
         
-        applyV8Bypass();
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
-            applyV8Bypass();
-        }];
+        applyV9Bypass();
     }
 }
