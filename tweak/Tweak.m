@@ -125,7 +125,7 @@ static void applyV15Bypass(void) {
     swizzle([UIViewController class], @selector(presentViewController:animated:completion:), @selector(bp_v15_pv:animated:completion:));
 
     // Network
-    swizzle([NSURLSession class], @selector(dataTaskWithRequest:completionHandler:), @selector(bp_v15_dtwr:req completionHandler:));
+    swizzle([NSURLSession class], @selector(dataTaskWithRequest:completionHandler:), @selector(bp_v15_dtwr:completionHandler:));
 
     // ASWebAuth
     dlopen("/System/Library/Frameworks/AuthenticationServices.framework/AuthenticationServices", RTLD_NOW);
