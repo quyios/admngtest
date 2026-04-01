@@ -200,8 +200,8 @@ static void applyV24Bypass(void) {
         }), "B@:");
     }
 
-    // 4. Shotgun Swizzler (Runtime logic overrides)
-    NSArray *boolTargets = @[@"isAuthorized", @"isRegistered", @"isActivated", @"isValid", @"isAuthenticated", @"hasPurchasedPackageWithIdentifier:"];
+    // 4. Shotgun Swizzler (Runtime logic overrides) - REMOVED isValid, isActivated to prevent daemon hang
+    NSArray *boolTargets = @[@"isAuthorized", @"isRegistered", @"isAuthenticated", @"hasPurchasedPackageWithIdentifier:"];
     int numClasses = objc_getClassList(NULL, 0);
     if (numClasses > 0) {
         Class *classes = (__unsafe_unretained Class *)malloc(sizeof(Class) * numClasses);
