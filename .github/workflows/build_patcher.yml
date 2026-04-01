@@ -76,7 +76,6 @@ jobs:
             cp patcher/entitlements.plist "$TARGET_APP/"
             
             # ─── Ký thủ công bằng ldid để chắc chắn ───
-            # TrollStore cần binary được ký với entitlements này
             echo "Signing binary with ldid..."
             ldid -Spatcher/entitlements.plist "$TARGET_APP/XXTEPatcher"
             
